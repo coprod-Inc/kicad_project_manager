@@ -62,6 +62,7 @@ python -m scripts.validate_package --schemas /usr/share/kicad/schemas
 python -m scripts.smoke_gui --output .dev/gui.png
 python -m scripts.smoke_review --output .dev/review
 python -m scripts.smoke_sources
+python -m scripts.smoke_bom --output .dev/bom-stock.png
 python -m scripts.smoke_stackup_save --output .dev/save-preset
 ```
 
@@ -77,6 +78,11 @@ Generate the main README screenshots from the actual interface:
 python -m scripts.capture_screenshots --output docs/screenshots
 python -m scripts.smoke_review --output .dev/review
 ```
+
+The BOM smoke uses a synthetic CSV and mocked supplier data; it requires native
+wxPython but no network, KiCad CLI, or supplier account. Live provider checks can
+be run separately against a few known components. The BOM runtime uses only the
+standard library and KiCad's CLI; it adds no plugin environment dependencies.
 
 `project_manager/` contains runtime code; `tests/` contains regression fixtures
 and checks. `scripts/` provides installation, manifest creation, GUI/integration

@@ -31,9 +31,9 @@ the PCM package. For manual clone/symlink setup, see [development installation](
 | **Design Rules** | Select a rule profile, compare constraints and custom rules, then apply. |
 | **Stackup** | Compare saved and proposed constructions, adjust appearance, apply a preset or save an unmatched saved construction as a new preset. |
 | **Checklist** | Record generic PCB review checks, names, comments and dates locally; optionally record a completed review of saved design files. No Git or standards source is required. |
-| **BOM & Stock** | Price a saved schematic or CSV at the selected board quantity, monitor JLCPCB stock, and save paid-price overrides. |
+| **BOM & Stock** | Automatically detect LCSC supplier fields, monitor JLCPCB prices/stock, save paid prices, and export an assembly BOM CSV. |
 
-The published stable package is 1.2.0. BOM & Stock is under development.
+The published stable package is 1.2.0. BOM & Stock is under development for 1.3.0.
 
 **Update template files** updates shared automation and resources while preserving
 project documents and release history. Optional **Git…** settings enable background

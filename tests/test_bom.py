@@ -1,11 +1,13 @@
 from decimal import Decimal
+import csv
+import io
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from project_manager.bom import BomError, BomPart, PriceTier, Supply, calculate, natural_key, read_csv, sorted_indices
+from project_manager.bom import BomError, BomPart, PriceTier, Supply, calculate, jlc_bom_csv, load_bom, natural_key, read_csv, sorted_indices
 from project_manager.bom_jlc import DETAIL_URL, fetch_supply, parse_supply
 from project_manager.bom_store import SupplyCache, load_state, save_state
 
@@ -20,6 +22,105 @@ def response(code='C25804'):
 
 
 class BomTests(unittest.TestCase):
+    def test_mixed_supplier_fields_prefer_primary_over_substitute_per_component(self):
+        parts = read_csv('Reference,Value,Footprint,Supplier,Supplier Part Number,Alt Supplier 1,Alt Supplier Part Number 1\n'
+                         'C1,100n,0603,Digikey,ABC-ND,LCSC,C111\n'
+                         'U1,IC,SO8,LCSC,C222,LCSC,C333\n')
+        self.assertEqual([part.code for part in parts], ['C111', 'C222'])
+        self.assertEqual(parts[0].code_fields, ('Alt Supplier Part Number 1',))
+        self.assertEqual(parts[1].code_fields, ('Supplier Part Number',))
+        self.assertFalse(any(part.warning for part in parts))
+
+    def test_numbered_supplier_slots_choose_first_lcsc_alternative(self):
+        part = read_csv('Reference,Value,Supplier,Supplier Part Number,Alt Supplier 1,Alt Supplier Part Number 1,Alt Supplier 2,Alt Supplier Part Number 2\n'
+                        'U1,IC,Mouser,123-ABC,Digikey,C111,LCSC,C222\n')[0]
+        self.assertEqual(part.code, 'C222')
+        part = read_csv('Reference,Value,Alt Supplier 2,Alt Supplier Part Number 2,Alt Supplier 1,Alt Supplier Part Number 1\n'
+                        'U1,IC,LCSC,C222,LCSC,C111\n')[0]
+        self.assertEqual(part.code, 'C111')
+
+    def test_generic_primary_and_alternate_part_fields_are_detected_without_supplier_labels(self):
+        for field in ('Part Number', 'Alt Part Number', 'Alternate Part Number 1', 'Supplier Part Number', 'Alt PN 2'):
+            with self.subTest(field=field):
+                part = read_csv(f'Reference,Value,{field}\nR1,10k, c25804 \n')[0]
+                self.assertEqual(part.code, 'C25804')
+                self.assertEqual(part.code_fields, (field,))
+
+    def test_identifiers_and_non_lcsc_suppliers_are_not_guessed_as_lcsc(self):
+        part = read_csv('Reference,Value,MPN,IPN,Manufacturer Part Number,Supplier,Supplier Part Number\n'
+                        'C123,C456,C789,C111,C222,Digikey,C333\n')[0]
+        self.assertEqual(part.code, '')
+        self.assertFalse(part.warning)
+
+    def test_invalid_selected_supplier_and_equal_priority_conflicts_are_reported(self):
+        for text in (
+            'Reference,Value,Supplier,Supplier Part Number,Alt Supplier 1,Alt Supplier Part Number 1\nU1,IC,LCSC,bad,LCSC,C222\n',
+            'Reference,Value,LCSC,Supplier,Supplier Part Number\nU1,IC,C111,LCSC,C222\n',
+        ):
+            with self.subTest(text=text):
+                part = read_csv(text)[0]
+                self.assertEqual(part.code, '')
+                self.assertTrue(part.warning)
+
+    def test_jlc_export_has_exact_headers_and_individual_per_board_designators(self):
+        parts = read_csv('Reference,Value,Footprint,LCSC,DNP,EXCLUDE_FROM_BOM\n'
+                         'R10,10k,Resistor_SMD:R_0603,C25804,,\n'
+                         'R2,10k,Resistor_SMD:R_0603,C25804,,\n'
+                         'R3,10k,Resistor_SMD:R_0603,C25804,yes,\n'
+                         'R4,10k,Resistor_SMD:R_0603,C25804,,1\n')
+        calculate(parts, 100, {}, {})
+        exported = jlc_bom_csv(parts)
+        rows = list(csv.reader(io.StringIO(exported)))
+        self.assertEqual(rows, [['Comment', 'Designator', 'Footprint', 'LCSC Part #'],
+                                ['10k', 'R2,R10', 'R_0603', 'C25804']])
+        self.assertIn('\r\n', exported)
+        self.assertEqual(read_csv(exported)[0].quantity, 2)
+
+    def test_export_keeps_mixed_footprints_and_values_when_costing_aggregates_by_code(self):
+        parts = read_csv('Reference,Value,Footprint,LCSC\n'
+                         'R1,10k,Library:A,C25804\nR2,10K,Library:B,C25804\n')
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0].quantity, 2)
+        rows = list(csv.DictReader(io.StringIO(jlc_bom_csv(parts))))
+        self.assertEqual([(r['Designator'], r['Comment'], r['Footprint']) for r in rows],
+                         [('R1', '10k', 'A'), ('R2', '10K', 'B')])
+
+    def test_export_quotes_fields_and_includes_parts_without_lcsc_for_manual_matching(self):
+        parts = read_csv('Reference,Value,Footprint,MPN\nQ1,"FET, 60V",Package:SO8,ABC\nQ2,"FET, 60V",Package:SO8,DEF\n')
+        rows = list(csv.DictReader(io.StringIO(jlc_bom_csv(parts))))
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r['Comment'] == 'FET, 60V' and r['LCSC Part #'] == '' for r in rows))
+
+    def test_export_rejects_ambiguous_codes_ranges_quantity_mismatches_and_case_duplicates(self):
+        for text in (
+            'Reference,Value,Footprint,LCSC,JLCPCB\nU1,IC,SO8,C123,C456\n',
+            'Reference,Value,Footprint,Quantity\nR1-R10,10k,0603,10\n',
+            'Reference,Value,Footprint,Quantity\nR1,10k,0603,10\n',
+            'Reference,Value,Footprint\nR1,10k,0603\nr1,10k,0603\n',
+            'Reference,Value,Footprint\nR1,10k,\n',
+        ):
+            with self.subTest(text=text), self.assertRaises(BomError):
+                jlc_bom_csv(read_csv(text))
+
+    def test_schematic_import_exports_all_fields_without_editing_the_source(self):
+        with TemporaryDirectory() as folder:
+            source = Path(folder) / 'board.kicad_sch'
+            source.write_text('(kicad_sch)')
+            before = source.read_bytes()
+
+            def export(arguments, **kwargs):
+                self.assertIn('--exclude-dnp', arguments)
+                self.assertIn('Reference,Value,Footprint,QUANTITY,DNP,EXCLUDE_FROM_BOM,*', arguments)
+                Path(arguments[arguments.index('--output') + 1]).write_text(
+                    'Reference,Value,Footprint,Supplier,Supplier Part Number\nU1,IC,SO8,LCSC,C123\n')
+                from subprocess import CompletedProcess
+                return CompletedProcess(arguments, 0)
+
+            with patch('project_manager.bom.kicad_cli', return_value='kicad-cli'), \
+                 patch('project_manager.bom.subprocess.run', side_effect=export):
+                self.assertEqual(load_bom(source)[0].code, 'C123')
+            self.assertEqual(source.read_bytes(), before)
+
     def test_jlc_csv_and_schematic_aliases_aggregate_before_tier_selection(self):
         csv = ('Designator,Value,Footprint,Quantity,LCSC Part #,DNP\n'
                'R1,10k,0603,1,C25804,\nR2,10k,0603,1,C25804,\n'

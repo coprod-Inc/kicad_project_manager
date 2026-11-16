@@ -125,7 +125,7 @@ def main():
                     wx.CallLater(100, check)
                     return
                 if phase == 0:
-                    assert frame.notebook.GetPageCount() == 5
+                    assert frame.notebook.GetPageCount() == 6
                     frame.notebook.SetSelection(1)
                     setup_panel = frame.setup_panel
                     assert setup_panel.release_panel.IsShown()

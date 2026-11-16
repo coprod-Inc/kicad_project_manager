@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from decimal import Decimal
 import faulthandler
 from pathlib import Path
@@ -45,7 +46,10 @@ def main():
         project.mkdir()
         (project / 'sample.kicad_pro').write_text('{}')
         (project / 'sample.kicad_pcb').write_text('(kicad_pcb)')
-        (project / 'bom.csv').write_text('Reference,Value,Footprint,LCSC\nR1,10k,0603,C25804\nR2,10k,0603,C25804\nQ1,MOSFET,SO8,\n')
+        (project / 'bom.csv').write_text('Reference,Value,Footprint,Supplier,Supplier Part Number,Alt Supplier 1,Alt Supplier Part Number 1\n'
+                                        'R1,10k,0603,Digikey,ABC-ND,LCSC,C25804\n'
+                                        'R2,10k,0603,LCSC,C25804,,\n'
+                                        'Q1,MOSFET,SO8,,,,\n')
         save_state(project, {'version': 1, 'boards': 1, 'source': 'bom.csv', 'overrides': {}})
         context = ProjectContext('10.0.7', 'sample', str(project), str(project / 'sample.kicad_pro'),
                                  str(project / 'sample.kicad_pcb'), True, True, False)
@@ -54,6 +58,47 @@ def main():
         frame.Show()
         panel = frame.bom_panel
         phase, started = 0, time.monotonic()
+
+        def check_export():
+            target = project / 'sample-jlcpcb-bom.csv'
+            original = (project / 'bom.csv').read_bytes()
+
+            class SaveDialog:
+                def __init__(self, *args, **kwargs):
+                    assert kwargs['defaultFile'] == 'sample-jlcpcb-bom.csv'
+                    assert kwargs['style'] & wx.FD_OVERWRITE_PROMPT
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    pass
+
+                def ShowModal(self):
+                    return wx.ID_OK
+
+                def GetPath(self):
+                    return str(target)
+
+            before = len(requests)
+            with patch('project_manager.bom_ui.wx.FileDialog', SaveDialog):
+                event = wx.CommandEvent(wx.EVT_BUTTON.typeId, panel.export_button.GetId())
+                panel.export_button.GetEventHandler().ProcessEvent(event)
+            rows = list(csv.DictReader(target.read_text('utf-8-sig').splitlines()))
+            assert list(rows[0]) == ['Comment', 'Designator', 'Footprint', 'LCSC Part #']
+            assert rows[0]['Designator'] == 'Q1' and rows[0]['LCSC Part #'] == ''
+            assert rows[1]['Designator'] == 'R1,R2' and rows[1]['LCSC Part #'] == 'C25804'
+            assert len(rows) == 2 and panel.boards.GetValue() == 5, 'Export multiplied per-board references'
+            assert len(requests) == before, 'Export fetched supplier data'
+            assert '1 designator(s) have no LCSC' in panel.status.GetLabel()
+            assert 'Q1' in panel.details.GetValue()
+            assert (project / 'bom.csv').read_bytes() == original
+            target = project / 'bom.csv'
+            with patch('project_manager.bom_ui.wx.FileDialog', SaveDialog), \
+                 patch('project_manager.bom_ui.wx.MessageBox') as error:
+                panel._export_bom()
+                assert error.call_count == 1
+            assert (project / 'bom.csv').read_bytes() == original, 'Export overwrote source BOM'
 
         def click_column(column):
             event = wx.ListEvent(wx.EVT_LIST_COL_CLICK.typeId, panel.table.GetId())
@@ -66,7 +111,7 @@ def main():
         def set_price(part, reset=None):
             panel.table.Select(row_for(part))
             def edit():
-                dialog = next(w for w in wx.GetTopLevelWindows() if isinstance(w, PriceDialog))
+                dialog = next(w for w in wx.GetTopLevelWindows() if isinstance(w, PriceDialog) and w.IsModal())
                 if reset == 'empty':
                     dialog.fields['paid'].SetValue('')
                     dialog.fields['quantity'].SetValue('')
@@ -94,7 +139,7 @@ def main():
                     wx.CallLater(80, check)
                     return
                 if phase == 0:
-                    frame.notebook.SetSelection(4)
+                    frame.notebook.SetSelection(frame.notebook.FindPage(panel))
                     phase = 1
                 elif phase == 1:
                     assert len(panel.parts) == 2
@@ -109,10 +154,13 @@ def main():
                     assert len(requests) == count, 'Quantity change made a network request'
                     assert panel.table.GetItemText(0, COLUMN_INDEX['unit_price']) == '0.005000'
                     assert panel.table.GetItemText(0, COLUMN_INDEX['library_type']) == 'Basic'
+                    assert panel.parts[0].code_fields == ('Alt Supplier Part Number 1', 'Supplier Part Number')
+                    assert panel.export_button.IsEnabled()
+                    check_export()
                     panel.table.Select(1)
 
                     def enter_price():
-                        dialog = next(w for w in wx.GetTopLevelWindows() if isinstance(w, PriceDialog))
+                        dialog = next(w for w in wx.GetTopLevelWindows() if isinstance(w, PriceDialog) and w.IsModal())
                         dialog.fields['paid'].SetValue('13')
                         dialog.fields['quantity'].SetValue('10')
                         dialog.fields['seller'].SetValue('External purchase')
@@ -179,6 +227,7 @@ def main():
                                          'Late result', 1, 1)
                     assert not panel.supplies and not panel.parts and not panel.errors
                     assert not panel.price_button.IsEnabled()
+                    assert not panel.export_button.IsEnabled()
                     # Closing a page while a worker runs must not touch destroyed controls.
                     mode['fail'], mode['wait'] = False, True
                     panel.set_context(context)
@@ -206,7 +255,8 @@ def main():
         release.set()
     if failures:
         raise SystemExit('; '.join(failures))
-    print('BOM GUI: all-column sorting, stable selection, library type, all three paid-price reset paths, '
+    print('BOM GUI: automatic supplier fields, per-board assembly export and source protection, '
+          'all-column sorting, stable selection, library type, all three paid-price reset paths, '
           'cached quantities, shortages, failure retention and stale-result isolation passed')
 
 

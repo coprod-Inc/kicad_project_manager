@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 
 from .bom import BomError, PriceTier, Supply, amount, part_number, positive_integer
+from . import __version__
 
 
 DETAIL_URL = 'https://cart.jlcpcb.com/shoppingCart/smtGood/getComponentDetail?componentCode='
@@ -75,7 +76,7 @@ def parse_supply(code: str, response: dict, fetched_at: float | None = None) -> 
 def fetch_supply(code: str) -> Supply:
     code = part_number(code)
     request = urllib.request.Request(DETAIL_URL + code, headers={
-        'Accept': 'application/json', 'User-Agent': 'KiCad-Project-Manager/1.1 BOM',
+        'Accept': 'application/json', 'User-Agent': f'KiCad-Project-Manager/{__version__} BOM',
     })
     try:
         with urllib.request.urlopen(request, timeout=10, context=tls_context()) as response:

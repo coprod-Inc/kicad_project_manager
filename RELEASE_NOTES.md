@@ -1,3 +1,16 @@
+KiCad Project Manager v1.3.0 (unreleased development)
+
+- Add the BOM & Stock tab from the BOM stock branch: quantity-based JLCPCB USD
+  pricing, stock and library classification, sorting, caching and saved paid prices.
+- Detect LCSC assignments per component in dedicated fields and primary or
+  alternate supplier part-number fields. Prefer the primary LCSC part, then the
+  first LCSC alternative. Show the detected source fields and report conflicts.
+- Export a per-board JLCPCB assembly CSV with Comment, Designator, Footprint and
+  LCSC Part #. Preserve individual designators, values and footprints independently
+  of cost grouping and build quantity. Keep uncoded parts for manual matching;
+  refuse ambiguous codes and incomplete assembly data.
+- Include BOM regressions in native Linux and bundled macOS GUI checks.
+
 KiCad Project Manager v1.2.0
 
 - Remember the explicit release version, including Unreleased, in the project's

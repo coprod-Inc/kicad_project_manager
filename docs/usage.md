@@ -28,11 +28,38 @@ or discarding Project Setup edits. Offline errors leave local sources usable.
 
 Open **BOM & Stock** to price the saved schematic. Save schematic edits first;
 unsaved editor changes are not included. **Reload BOM** reruns KiCad's BOM export,
-excluding DNP and excluded components. Supplier fields such as `LCSC`,
-`LCSC Part #`, and `JLCPCB Part Number` are recognized. Conflicting part-number
-fields are reported instead of choosing one. **Import CSV…** also accepts grouped
+excluding DNP and excluded components. LCSC detection runs separately for every
+component; no project-wide column selection is needed. Dedicated fields such as
+`LCSC`, `LCSC Part #`, and `JLCPCB Part Number` are recognized, along with
+`Supplier Part Number`, `Alt Supplier Part Number 1` and ordinary `Part Number`
+or `Alt Part Number` fields containing a C-number. Supplier labels are respected:
+a DigiKey part number is not treated as LCSC. Manufacturer part numbers, values,
+references and internal part numbers are not used as supplier assignments.
+
+The primary LCSC part takes precedence over alternative supplier slots; otherwise
+the first populated LCSC alternative is used. For example, a primary DigiKey part
+with an LCSC alternate uses the alternate code; a primary LCSC part with another
+LCSC substitute uses the primary code. Dedicated LCSC fields are authoritative;
+conflicting fields at the same priority are reported instead of choosing one.
+Select a row to see its detected source field(s). **Import CSV…** also accepts grouped
 JLCPCB/KiCad BOMs with references, quantity, value and a part-number column.
 **Use saved schematic** returns from an imported CSV to the project's schematic.
+
+**Export JLCPCB BOM…** saves a UTF-8 CSV with the columns `Comment`, `Designator`,
+`Footprint` and `LCSC Part #`, following
+[JLCPCB's assembly BOM format](https://jlcpcb.com/help/article/how-to-generate-bom-and-centroid-files-from-kicad-8).
+Save and Reload BOM first to include the latest schematic changes. The export
+describes **one board** regardless of the Boards quantity: grouped designators
+are written explicitly, separated by commas, with no reference ranges. Value
+becomes Comment; the footprint's library prefix is removed. Cost grouping by
+LCSC number never discards differing values or footprints in the assembly CSV.
+
+Parts without a code are included with a blank LCSC cell and listed after export
+for manual matching on JLCPCB. DNP and excluded parts stay out. Conflicting codes,
+missing values/footprints, duplicate designators (including case-only differences),
+or quantities inconsistent with the explicit references must be corrected before
+export. Export does not fetch prices or change the source BOM. The assembly order
+also needs a separate component placement (CPL) file.
 
 Change **Boards** to recalculate immediately from cached quantity price tiers.
 Identical JLCPCB numbers are aggregated before choosing a tier. All prices are

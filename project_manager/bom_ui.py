@@ -10,7 +10,7 @@ import time
 
 import wx
 
-from .bom import BomError, amount, calculate, load_bom, natural_key, positive_integer, sorted_indices
+from .bom import BomError, amount, calculate, jlc_bom_csv, load_bom, natural_key, positive_integer, sorted_indices
 from .bom_jlc import fetch_supply
 from .bom_store import CACHE_TTL, STATE_FILE, SupplyCache, load_state, save_state
 from .preferences import data_directory
@@ -173,7 +173,12 @@ class BomStockPanel(wx.Panel):
         actions.Add(self.restore_button, 0, wx.RIGHT, 8)
         self.schematic_button = wx.Button(self, label='Use saved schematic')
         self.schematic_button.Bind(wx.EVT_BUTTON, self._use_schematic)
-        actions.Add(self.schematic_button, 0)
+        actions.Add(self.schematic_button, 0, wx.RIGHT, 8)
+        actions.AddStretchSpacer()
+        self.export_button = wx.Button(self, label='Export JLCPCB BOM…')
+        self.export_button.SetToolTip('Export a per-board assembly CSV: Comment, Designator, Footprint, LCSC Part #. Save and reload the schematic first to include its latest edits.')
+        self.export_button.Bind(wx.EVT_BUTTON, self._export_bom)
+        actions.Add(self.export_button)
         layout.Add(actions, 0, wx.EXPAND | wx.ALL, 14)
         self.details = wx.TextCtrl(self, value='Select a component to inspect its price and stock status.',
                                    style=wx.TE_MULTILINE | wx.TE_READONLY, size=(-1, 65))
@@ -439,6 +444,7 @@ class BomStockPanel(wx.Panel):
         self.import_button.Enable(bool(self.root) and not self._loading)
         self.schematic_button.Enable(bool(self._schematic()) and not self._loading)
         self.refresh_button.Enable(bool(self.parts) and not self._loading and not self._refreshing)
+        self.export_button.Enable(bool(self.parts) and not self._loading)
         self.price_button.Enable(bool(selected) and not self.state_error)
         self.restore_button.Enable(bool(selected and selected.key in self.state.get('overrides', {})) and not self.state_error)
 
@@ -457,7 +463,8 @@ class BomStockPanel(wx.Panel):
         self.per_board.SetLabel((f'USD {money(total / self.boards.GetValue(), 2)} / board' + (' · partial' if missing else '')) if lines else 'Per board —')
         shortage = sum(line.stock is not None and line.stock < line.purchase for line in lines if line.part.code)
         stale = sum(time.time() - supply.fetched_at >= CACHE_TTL for supply in self.supplies.values())
-        message = f'{len(lines)} purchasing parts · {shortage} shortages · {stale} stale · {len(self.errors)} lookup errors{suffix}'
+        uncoded = sum(not part.code for part in self.parts)
+        message = f'{len(lines)} purchasing parts · {uncoded} without LCSC · {shortage} shortages · {stale} stale · {len(self.errors)} lookup errors{suffix}'
         self._message(self.state_error or self.save_error or message)
         rows = []
         for line in lines:
@@ -524,10 +531,11 @@ class BomStockPanel(wx.Panel):
     def _selection_changed(self, event=None):
         part = self._selected()
         if part:
-            self.details.ChangeValue(f'{", ".join(part.references)}\n{part.value} · {part.footprint}\n' +
+            detected = ' · LCSC field: ' + ', '.join(part.code_fields) if part.code_fields else ''
+            self.details.ChangeValue(f'{", ".join(part.references)}\n{part.value} · {part.footprint}{detected}\n' +
                                      (self.errors.get(part.code) or part.warning or
                                       ('JLCPCB stock is shared supplier availability; it is not reserved for this build.'
-                                       if part.code else 'Assign a JLCPCB number in the schematic to monitor supplier stock.')))
+                                       if part.code else 'No LCSC assignment detected. Add a dedicated LCSC field or a supplier part number in the saved schematic.')))
         else:
             self.details.ChangeValue('Select a component to inspect its price and stock status.')
         self._update_buttons()
@@ -566,6 +574,32 @@ class BomStockPanel(wx.Panel):
                 self.source = Path(dialog.GetPath())
                 self._remember_source()
                 self.reload_bom()
+
+    def _export_bom(self, event=None):
+        try:
+            # Validate before opening Save; no supplier request or price is needed.
+            contents = jlc_bom_csv(self.parts)
+            anchor = Path(self.context.project_file or self.context.board_file)
+            with wx.FileDialog(self, 'Export JLCPCB assembly BOM', defaultDir=str(self.root),
+                               defaultFile=anchor.stem + '-jlcpcb-bom.csv',
+                               wildcard='BOM CSV (*.csv)|*.csv',
+                               style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dialog:
+                if dialog.ShowModal() != wx.ID_OK:
+                    return
+                destination = Path(dialog.GetPath())
+                if destination.suffix.lower() != '.csv':
+                    raise BomError('Choose a filename ending in .csv.')
+                if self.source and destination.resolve() == self.source.resolve():
+                    raise BomError('Choose a different filename to preserve the source BOM.')
+                destination.write_bytes(contents.encode('utf-8-sig'))
+            missing = [ref for part in self.parts if not part.code for ref in part.references]
+            message = f'Exported per-board JLCPCB BOM: {destination}'
+            if missing:
+                message += f' · {len(missing)} designator(s) have no LCSC code; match them on JLCPCB.'
+            self._message(message)
+            self.details.ChangeValue(message + ('\nWithout LCSC: ' + ', '.join(missing) if missing else ''))
+        except (OSError, ValueError) as exc:
+            wx.MessageBox(str(exc), 'Export JLCPCB BOM', wx.OK | wx.ICON_ERROR, self)
 
     def _use_schematic(self, event=None):
         source = self._schematic()

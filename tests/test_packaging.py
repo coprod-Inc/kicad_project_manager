@@ -30,7 +30,8 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(version["install_size"], sum(item.file_size for item in package.infolist()))
                 names = package.namelist()
                 for module in ('release.py', 'release_ui.py', 'checklist.py', 'checklist_ui.py',
-                               'widgets.py', 'source_repository.py', 'source_repository_ui.py'):
+                               'widgets.py', 'source_repository.py', 'source_repository_ui.py',
+                               'bom.py', 'bom_ui.py', 'bom_jlc.py', 'bom_store.py'):
                     self.assertIn('plugins/kicad_project_manager/project_manager/' + module, names)
                 self.assertTrue(all(name == "metadata.json" or name.startswith(("plugins/kicad_project_manager/", "resources/")) for name in names))
                 self.assertFalse(any(".git" in name or "tests/" in name or "__pycache__" in name for name in names))

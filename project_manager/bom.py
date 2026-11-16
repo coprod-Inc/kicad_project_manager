@@ -47,6 +47,14 @@ def positive_integer(value: object) -> int:
 
 
 @dataclass(frozen=True)
+class AssemblyRow:
+    references: tuple[str, ...]
+    value: str
+    footprint: str
+    quantity: int
+
+
+@dataclass(frozen=True)
 class BomPart:
     key: str
     references: tuple[str, ...]
@@ -55,6 +63,8 @@ class BomPart:
     code: str
     quantity: int
     warning: str = ''
+    code_fields: tuple[str, ...] = ()
+    assembly_rows: tuple[AssemblyRow, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -126,6 +136,60 @@ def _is_code_field(name: str) -> bool:
     return bool(re.fullmatch(r'(?:lcsc|jlcpcb|jlc)(?:partnumber|partnum|partno|partnr|part|pn|number|code|id)?', normalized(name)))
 
 
+_PART_FIELD = r'(?:partnumber|partnum|partno|partnr|partcode|partid|part|pn|number|code)'
+
+
+def detect_lcsc(row: dict[str, str], headers: list[str]) -> tuple[str, str, tuple[str, ...]]:
+    """Resolve each component's supplier fields without assuming a project-wide mapping."""
+    candidates = []
+    for header in headers:
+        name = normalized(header)
+        explicit = _is_code_field(header)
+        stem = re.sub(r'\d+', '', name)
+        generic = re.fullmatch(r'(?:(?:alt|alternate|alternative|secondary))?'
+                               r'(?:(?:supplier|vendor))?' + _PART_FIELD, stem)
+        if not explicit and not generic:
+            continue
+        value = str(row.get(header) or '').strip()
+        if not value:
+            continue
+        tagged = False
+        priority = 0
+        if not explicit:
+            prefix = re.sub(_PART_FIELD + r'$', '', stem)
+            supplier_names = ({prefix} if prefix.endswith(('supplier', 'vendor')) else
+                              {prefix + 'supplier', prefix + 'vendor'})
+            indices = re.findall(r'\d+', name)
+            suppliers = [str(row.get(other) or '').strip() for other in headers
+                         if re.sub(r'\d+', '', normalized(other)) in supplier_names
+                         and re.findall(r'\d+', normalized(other)) == indices
+                         and str(row.get(other) or '').strip()]
+            tagged = any(re.search(r'\b(?:lcsc|jlcpcb|jlc)\b', supplier, re.I) for supplier in suppliers)
+            # A C-shaped DigiKey/manufacturer identifier is not an LCSC assignment.
+            if suppliers and not tagged:
+                continue
+            # Alternate supplier slots describe substitute parts, not conflicting
+            # assignments. Prefer the primary LCSC part, then the first LCSC alt.
+            alternate = prefix.startswith(('alt', 'secondary')) or bool(indices)
+            priority = 10 + (int(indices[0]) if indices else 1) if alternate else (0 if tagged else 1)
+        try:
+            code = part_number(value)
+        except BomError:
+            if explicit or tagged:
+                candidates.append((priority, header, ''))
+        else:
+            candidates.append((priority, header, code))
+    if not candidates:
+        return '', '', ()
+    priority = min(candidate[0] for candidate in candidates)
+    selected = [(header, code) for rank, header, code in candidates if rank == priority]
+    codes = {code for _, code in selected}
+    fields = tuple(header for header, _ in selected)
+    warning = ('Conflicting or invalid JLCPCB fields: ' + ', '.join(fields)
+               if '' in codes or len(codes) > 1 else '')
+    return (next(iter(codes)) if not warning else '', warning, fields)
+
+
 def read_csv(text: str) -> list[BomPart]:
     """Accept KiCad CLI, JLCPCB, and ordinary grouped BOMs without rewriting them."""
     text = text.lstrip('\ufeff')
@@ -165,31 +229,62 @@ def read_csv(text: str) -> list[BomPart]:
         if not raw_qty and any('-' in ref for ref in refs):
             raise BomError(f'BOM row {number} uses reference ranges; add a Quantity column.')
         quantity = positive_integer(raw_qty) if raw_qty else len(refs)
-        codes, invalid = set(), False
-        for header in headers:
-            candidate = str(row.get(header) or '').strip()
-            if _is_code_field(header) and candidate:
-                try:
-                    codes.add(part_number(candidate))
-                except BomError:
-                    invalid = True
-        warning = 'Conflicting or invalid JLCPCB fields' if invalid or len(codes) > 1 else ''
-        code = next(iter(codes)) if len(codes) == 1 and not invalid else ''
-        value, footprint = get(row, 'value'), get(row, 'footprint', 'package')
+        code, warning, code_fields = detect_lcsc(row, headers)
+        value, footprint = get(row, 'value', 'comment'), get(row, 'footprint', 'package')
         manufacturer = get(row, 'manufacturer', 'manufacturername')
         mpn = get(row, 'mpn', 'manufacturerpartnumber', 'mfrpart')
         identity = '\0'.join((manufacturer, mpn, value, footprint))
         # Reannotation must not discard historical paid prices.
         key = 'jlc:' + code if code else 'part:' + hashlib.sha256(identity.encode()).hexdigest()[:24]
+        assembly = AssemblyRow(refs, value, footprint, quantity)
         if key in groups:
             old = groups[key]
             groups[key] = BomPart(key, old.references + refs, old.value, old.footprint,
-                                  code, old.quantity + quantity, old.warning or warning)
+                                  code, old.quantity + quantity, old.warning or warning,
+                                  tuple(dict.fromkeys(old.code_fields + code_fields)),
+                                  old.assembly_rows + (assembly,))
         else:
-            groups[key] = BomPart(key, refs, value, footprint, code, quantity, warning)
+            groups[key] = BomPart(key, refs, value, footprint, code, quantity, warning, code_fields, (assembly,))
     if not groups:
         raise BomError('No populated BOM components were found.')
     return list(groups.values())
+
+
+def jlc_bom_csv(parts: list[BomPart]) -> str:
+    """JLCPCB assembly BOM for one board, independent of purchase quantities/prices.
+
+    Format: https://jlcpcb.com/help/article/bill-of-materials-for-pcb-assembly
+    Keep uncoded parts for manual matching; never guess or omit an assignment.
+    """
+    if not parts:
+        raise BomError('Load a populated BOM before exporting.')
+    groups, seen = {}, set()
+    for part in parts:
+        if part.warning:
+            raise BomError(f'{", ".join(part.references)}: {part.warning}. Correct the source BOM and reload before exporting.')
+        code = part_number(part.code) if part.code else ''
+        rows = part.assembly_rows or (AssemblyRow(part.references, part.value, part.footprint, part.quantity),)
+        for row in rows:
+            refs = row.references
+            if (row.quantity != len(refs) or not refs
+                    or any(re.search(r'\d-.*\d', ref) or re.search(r'[\s,;]', ref) for ref in refs)):
+                raise BomError('Assembly export needs individual references with quantity matching their count. Re-export the source BOM without reference ranges.')
+            for ref in refs:
+                if ref.upper() in seen:
+                    raise BomError(f'Duplicate assembly designator {ref}; JLCPCB treats designators as uppercase.')
+                seen.add(ref.upper())
+            value = ' '.join(row.value.split())
+            footprint = row.footprint.rsplit(':', 1)[-1].strip()
+            if not value or not footprint:
+                raise BomError(f'{", ".join(refs)} needs a Value/Comment and Footprint before assembly export.')
+            key = (value, footprint, code, part.key if not code else '')
+            groups.setdefault(key, []).extend(refs)
+    output = io.StringIO(newline='')
+    writer = csv.writer(output, lineterminator='\r\n')
+    writer.writerow(('Comment', 'Designator', 'Footprint', 'LCSC Part #'))
+    for (value, footprint, code, _), refs in sorted(groups.items(), key=lambda item: min(natural_key(ref) for ref in item[1])):
+        writer.writerow((value, ','.join(sorted(refs, key=natural_key)), footprint, code))
+    return output.getvalue()
 
 
 def kicad_cli() -> str:

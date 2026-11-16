@@ -55,7 +55,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Python 3.9 has no build for the Ubuntu 26.04 latest runner.
+        os: [ubuntu-24.04, macos-latest, windows-latest]
         python: ['3.9', '3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
@@ -113,7 +114,7 @@ jobs:
       matrix:
         include:
           - major: 9
-            image: ghcr.io/inti-cmnb/kicad9_auto_full@sha256:4aabcd7d09ba3b605b9e9813b0ee41a8dbaa4fda777929e235a718f7d47f6113
+            image: ghcr.io/inti-cmnb/kicad9_auto_full@sha256:4d47f3b808e018d0a45afa597b4ffcd2586128bfa9801e5ebedd64cc45758092
           - major: 10
             image: ghcr.io/inti-cmnb/kicad10_auto_full@sha256:7b720dc99b2775e4f4133f06887cf9a53c85a8403438d6684ecf0916d124f52a
     runs-on: ubuntu-latest

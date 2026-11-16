@@ -609,6 +609,11 @@ class Upgrade:
         return '\n'.join(parts) or 'No file changes are needed.'
 
 
+def template_file_choices(comparison: Comparison) -> dict[str, str]:
+    """Replace shared automation/resources while deferring every project document."""
+    return {item.path: 'review' if item.editable else 'use' for item in comparison.items}
+
+
 def prepare_upgrade(comparison: Comparison, choices: dict[str, str], edits: dict[str, bytes] | None = None) -> Upgrade:
     """Apply decided files, preserving the baselines of deferred files.
 

@@ -1,3 +1,38 @@
+KiCad Project Manager v1.2.0
+
+- Remember the explicit release version, including Unreleased, in the project's
+  Project Manager records. Default to blank instead of guessing from copied YAML
+  history entries, and preserve the choice through reopening and template upgrades.
+- Clear the unsaved-setup flag after Apply reports no changes, including when a
+  CHECKED release version already has its history commands enabled.
+- Use the same source-folder dialog for templates and standards, showing the
+  current path. Size Git settings to fit all controls, fill remaining Overview
+  space with Activity, and remove the redundant template Details window.
+- Prepare board releases in Project Setup when CHECKED is selected. Edit only
+  the Unreleased changelog notes and enter a version to enable the matching
+  KiBot release title/body commands. Preserve earlier history and custom commands.
+- Preview and back up changelog, variable and setup changes together; reject
+  external edits before saving. Leave dated release sections to release-tag CI.
+- Inspect the saved schematic hierarchy for the selected version's visible
+  RELEASE_TITLE and RELEASE_BODY placeholders. Report missing blocks and remind
+  designers to inspect the final schematic PDF without changing schematic layout.
+- Add a fifth Checklist page with bundled generic PCB review items, reviewer
+  names, comments and dates. Save answers in kibot_resources/project_manager/review.json,
+  independently of Git, standards repositories and online services.
+- Keep checklist ticks through iterative design changes. Optionally record a
+  completed review against local saved-file fingerprints; show one notice for
+  later design changes while preserving every answer and excluding editor preferences.
+- Compact Project Setup into two columns with single-line authors and multiple
+  reviewers. Keep Apply/Preview visible, prevent accidental dropdown wheel changes,
+  and show schematic-history results beside the inspection button.
+- Explain stackup row differences, including dielectric constant and loss tangent.
+- Update all shared template files directly from Overview or template review,
+  preserving project documents, metadata, workflow choices and release history.
+- Optionally configure source Git URLs for automatic background checks and explicit
+  fast-forward pulls. Refuse overlapping local edits and refresh sources after pulling.
+- Show checklist comments in the table, autosave feedback and completed-review
+  confirmation. Add Tick all/Untick all; leave old root review records untouched.
+
 KiCad Project Manager v1.1.0
 
 - Separate Project documents from shared Template files in template review. Use

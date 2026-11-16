@@ -171,6 +171,7 @@ class Change:
 class Plan:
     snapshot: Snapshot
     changes: tuple[Change, ...]
+    checks: tuple[tuple[str, bytes | None], ...] = ()
 
     def diff(self) -> str:
         return '\n'.join(''.join(difflib.unified_diff(
@@ -307,5 +308,10 @@ def commit_changes(root: Path, changes: tuple[Change, ...], storage: Path | None
 
 
 def apply(plan: Plan, storage: Path | None = None) -> Path | None:
+    def verify():
+        assert_unchanged(plan.snapshot)
+        for relative, before in plan.checks:
+            if read_file(plan.snapshot.root, relative) != before:
+                raise SetupError(f'{relative} changed since it was loaded. Refresh and review the values again.')
     return commit_changes(plan.snapshot.root, plan.changes, storage,
-                          verify=lambda: assert_unchanged(plan.snapshot))
+                          verify=verify)

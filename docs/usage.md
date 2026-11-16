@@ -6,20 +6,37 @@ KiCad 9 and 10 are supported. Project Setup and template review expect the KiBot
 described below; design rules and stackup features also work with saved KiCad 9
 projects without KiBot configuration. No particular organization’s template or
 catalog is required. Templates and standards are separate local folders or Git
-checkouts; the plugin does not fetch, commit, push or run CI.
+checkouts. Git is optional; the plugin never commits, pushes or runs CI.
 
 On Overview, select a source with **Choose template…** or **Standards repository →
 Change…**. Source paths are remembered on this computer. **Refresh** reloads
 project files and the catalog. An installed template is the comparison source;
 its version does not establish that it is the latest remote release.
+Both source buttons use the same folder dialog, showing the current path with
+Browse and Use folder controls.
+
+For an existing Git checkout, **Git…** optionally links its origin URL and branch.
+Automatic checks run in the background on open and every minute when enabled.
+They fetch changed remote refs without modifying local source files. **Pull** is
+explicit and uses a fast-forward update of the selected branch. Overlapping local
+edits, diverged history and unfinished Git operations prevent pulling; unrelated
+local edits are kept. The plugin never resets, stashes or switches branches.
+After pulling, source comparisons and catalogs reload without reopening the plugin
+or discarding Project Setup edits. Offline errors leave local sources usable.
 
 ## Template review
+
+**Update template files** on Overview or in the review window updates all shared
+files from the selected local template in one action, with backups. It preserves
+project metadata, workflow status, CI KiCad version and release history. Project
+documents and project ignore rules stay untouched and pending decisions remain
+available in review. Pull a configured source first to use its latest remote files.
 
 A versioned template contains `kibot_resources/project_manager/template.json`.
 New KiCad projects may carry a copy of that manifest. Older projects keep an
 unknown history until reviewed. Sources with missing, added or modified managed
-files must be restored or published as a new version before use; **Details…**
-lists the affected paths. Downgrades and switching template identities are refused.
+files must be restored or published as a new version before use; the status tooltip
+and Activity list the affected paths. Downgrades and switching template identities are refused.
 
 The managed inventory covers KiBot YAML, `.github/workflows/ci.yaml`,
 `kibot_launch.sh`, all logos in `Logos/`, drawing sheets in `Templates/`, and supported resources in
@@ -154,6 +171,11 @@ Setup edits `definitions` metadata in `kibot_yaml/kibot_main.yaml` and the workf
 `REVIEWER` is added only when entered. Missing workflows are added through template
 review; workflow status stays unavailable until the file exists.
 
+Authors and reviewers accept multiple names separated by commas or semicolons.
+The form uses two columns, with Apply and Preview kept outside the scrolling area.
+Mouse-wheel scrolling over dropdowns scrolls the surrounding form where available
+and does not change the selected value.
+
 After **Apply**, a green message confirms that changes were saved and remains
 visible after refresh. Save failures show a red message and an error dialog;
 your edits remain available to correct or retry. Editing a field clears the
@@ -181,6 +203,73 @@ numbered changelog title/body extraction entries; other shared configuration sta
 checked. When uncommenting release entries, align `- variable` with the other
 list entries and indent `command` two spaces further.
 
+## Board release preparation
+
+Select **CHECKED** in Project Setup to show **Prepare a board release**. Edit the
+Markdown below `## [Unreleased]` in `CHANGELOG.md`; older version sections and link
+definitions remain outside this editor. A missing changelog can be created here.
+Enter a version such as `1.0.0` to enable its two title/body variable-command pairs
+in `kibot_yaml/kibot_pre_set_text_variables.yaml`. Existing standard examples are
+uncommented with the correct indentation; new versions are inserted without
+removing earlier entries. Customized commands and duplicate entries require manual
+review. A version already present as a released changelog section cannot be reused.
+
+The version field starts blank (**Unreleased**); enabled YAML history entries do
+not select a release, because they may have been copied from another project.
+Apply saves your explicit choice in `kibot_resources/project_manager/release.json`.
+You can choose an earlier unissued version or clear the field, Apply, and reopen
+without it jumping to another enabled history entry. Existing YAML history stays
+intact. Once the chosen version appears in the released changelog, the field
+returns to Unreleased. Template upgrades preserve the selection record.
+
+The ordinary **Preview Changes…** and **Apply** include these files and the selection record along with
+setup changes, with local backups and checks for intervening edits. They do not
+create dated version headings, commits, pull requests or tags. Push CHECKED on
+`dev`, wait for the workflow, merge the PR into `main`, then tag `main`. The existing
+release workflow creates the dated version section and generates RELEASED outputs.
+Versioned history values are populated once that dated section exists.
+
+Leaving the version field checks the saved schematic; **Check schematic history**
+repeats that inspection after you save changes. It follows the schematic's sheet hierarchy
+and looks for the selected version's title and body placeholders in text or text
+boxes. It reports missing placeholders and leaves the schematic untouched. Save
+the sheets first and inspect their layout and the final generated schematic PDF;
+finding a placeholder alone does not verify its rendered contents or position.
+
+## Local checklist
+
+**Checklist**, after Stackup, provides generic Designer, Outputs, Independent
+review and Before ordering checks bundled with the plugin. It works without a
+template, standards repository, Git or online account. Enter your reviewer name,
+tick items and add comments. Checks save immediately; comments and the current
+reviewer name save after a short pause. The save indicator confirms persistence;
+comments also appear in the table. Each checked item
+retains the name and date of the person who checked it. Later comment edits or
+changing the current reviewer do not rewrite another person's recorded check.
+Explain not-applicable items in comments before marking them reviewed.
+
+Answers live in `kibot_resources/project_manager/review.json` under the project
+(or standalone board folder). Old root-level `kpm-review.json` files are ignored
+and are not migrated. Copy
+or share this file with the project to retain the review on another computer.
+Opening the panel creates no file until you save an answer or reviewer name.
+Conflicting external edits are reported rather than overwritten.
+**Tick all** uses the current reviewer for newly checked items; existing check
+authors and comments stay intact. **Untick all** clears ticks and the completed
+review snapshot while keeping comments. Recording a completed review displays
+confirmation; incomplete checks or a missing reviewer produce an explanation.
+
+During review, design saves do not clear ticks or mark individual items outdated.
+After completing the checks, **Record completed review** stores the reviewer's
+name, date and local content fingerprints of the saved board, project, custom
+rules, schematic hierarchy and KiBot YAML when present. Later design changes show
+one notice when you reopen the tab or Refresh; all checks and comments remain.
+Saving unchanged files, editing the checklist, changing `.kicad_prl` editor
+preferences or regenerating output files does not invalidate the snapshot.
+The notice compares saved files; save editor changes before completing a review.
+Revisit affected checks yourself and record the completed review again when done.
+The checklist records human review and does not run checks or block ordering.
+
 ## Rules and stackups
 
 Choose a folder containing `catalog.json`; see [the format](standards-format.md).
@@ -193,6 +282,8 @@ dielectric sublayers and surface properties. Mask, silkscreen and finish overrid
 are explicit. A copper layer still used by the board cannot be removed. Matching
 uses physical properties rather than preset names. Impedance guides describe
 routing geometry; they do not assign nets or change widths.
+Highlighted rows include change descriptions, with full values in the hover
+tooltip and Details table, including dielectric constant and loss tangent.
 
 Save and close both PCB and schematic editors before applying standards, then
 reopen. `kpm-standards.json` records source hashes, presets and appearance choices.

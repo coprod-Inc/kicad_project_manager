@@ -10,7 +10,7 @@ from .diff_ui import DIFF_ADDED_COLOUR, DIFF_REMOVED_COLOUR, show_diff
 from .impedance_table import ImpedanceTable
 from .impedance_ui import ImpedancePanel
 from .templates import (README_SOURCE, Comparison, Item, Upgrade, apply_upgrade, compare,
-                        load_template, prepare_upgrade, split_ignore_rules, text)
+                        load_template, prepare_upgrade, split_ignore_rules, text, template_file_choices)
 from .yaml_fields import SetupError
 
 MATCH_COLOUR = wx.Colour(46, 170, 80)
@@ -177,6 +177,10 @@ class TemplateReviewDialog(wx.Dialog):
         buttons = wx.BoxSizer(wx.HORIZONTAL)
         note = wx.StaticText(self, label='Apply saves all chosen actions in both lists. Originals are backed up.')
         buttons.Add(note, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+        self.update_template_button = wx.Button(self, label='Update template files')
+        self.update_template_button.SetToolTip('Use the selected template for all shared files. Project documents and their drafts are kept; project metadata and workflow choices are preserved. Originals are backed up.')
+        self.update_template_button.Bind(wx.EVT_BUTTON, self._update_template_files)
+        buttons.Add(self.update_template_button, 0, wx.RIGHT, 8)
         buttons.Add(wx.Button(self, wx.ID_CANCEL, 'Close'))
         self.Bind(wx.EVT_BUTTON, self._close, id=wx.ID_CANCEL)
         self.Bind(wx.EVT_CLOSE, self._close)
@@ -578,6 +582,9 @@ class TemplateReviewDialog(wx.Dialog):
         except (SetupError, OSError) as exc:
             wx.MessageBox(str(exc), 'Template upgrade', wx.OK | wx.ICON_ERROR, self)
 
+    def _update_template_files(self, event):
+        self._apply_choices(template_file_choices(self.comparison))
+
     def _apply_reviewed(self, plan, choices):
         """Save exactly the reviewed plan and refresh without closing this dialog."""
         backup = self._apply_plan(plan)
@@ -598,41 +605,3 @@ class TemplateReviewDialog(wx.Dialog):
         self.feedback.SetLabel(f'Changes applied. Backup: {backup}' if backup else 'The chosen actions are already applied.')
         self.feedback.Wrap(max(200, self.GetClientSize().width - 24))
         self.Layout()
-
-
-class TemplateDetailsDialog(wx.Dialog):
-    def __init__(self, parent, comparison: Comparison):
-        super().__init__(parent, title='Template Details', size=(900, 620),
-                         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
-        layout = wx.BoxSizer(wx.VERTICAL)
-        self.results = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL | wx.TE_RICH2)
-        neutral = self.results.GetForegroundColour()
-        self.results.AppendText(f'{comparison.summary}\n\nTemplate: {comparison.template.root}\n\n')
-        for item in comparison.items:
-            self.results.SetDefaultStyle(wx.TextAttr(item_colour(item)))
-            self.results.AppendText(f'{item.status}: {item.path}\n')
-        self.results.SetDefaultStyle(wx.TextAttr(neutral))
-        if comparison.extras:
-            self.results.AppendText('\nAdditional project files (preserved):\n' + '\n'.join(comparison.extras))
-        self.results.ShowPosition(0)
-        layout.Add(self.results, 1, wx.EXPAND | wx.ALL, 12)
-        layout.Add(self.CreateStdDialogButtonSizer(wx.OK), 0, wx.EXPAND | wx.ALL, 12)
-        self.SetSizer(layout)
-        self.CentreOnParent()
-
-
-def show_details(parent, comparison: Comparison):
-    with TemplateDetailsDialog(parent, comparison) as dialog:
-        dialog.ShowModal()
-
-
-def show_text_details(parent, message: str):
-    with wx.Dialog(parent, title='Template Details', size=(900, 620),
-                   style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER) as dialog:
-        layout = wx.BoxSizer(wx.VERTICAL)
-        control = wx.TextCtrl(dialog, value=message, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL)
-        layout.Add(control, 1, wx.EXPAND | wx.ALL, 12)
-        layout.Add(dialog.CreateStdDialogButtonSizer(wx.OK), 0, wx.EXPAND | wx.ALL, 12)
-        dialog.SetSizer(layout)
-        dialog.CentreOnParent()
-        dialog.ShowModal()

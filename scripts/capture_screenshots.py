@@ -92,8 +92,11 @@ def main():
                                  if preset.id == 'example_six_layer')
                     panel.choices['stackups'].SetSelection(index)
                     panel._selection_changed()
-                else:
+                elif phase == 3:
                     capture(frame, args.output / 'stackup.png')
+                    frame.notebook.SetSelection(4)
+                else:
+                    capture(frame, args.output / 'checklist.png')
                     with TemplateReviewDialog(frame, compare(project, template)) as dialog:
                         dialog.select_path('kibot_resources/templates/assembly_notes.txt')
                         def capture_review():
@@ -120,7 +123,7 @@ def main():
         faulthandler.cancel_dump_traceback_later()
         if failures:
             raise SystemExit('; '.join(failures))
-    print(f'Captured four main pages and template review in {args.output}')
+    print(f'Captured five main pages and template review in {args.output}')
 
 
 if __name__ == '__main__':

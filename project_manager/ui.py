@@ -11,15 +11,20 @@ import wx
 
 from . import NAME, __version__
 from .context import ContextError, ProjectContext
-from .preferences import data_directory, kicad_user_template_directory, save_template, load_standards
+from .preferences import data_directory, kicad_user_template_directory, save_template, load_standards, save_settings
 from .setup import read_setup, suggested_metadata
 from .setup_ui import ProjectSetupPanel
-from .settings_ui import StandardsFolderDialog
+from .checklist_ui import ChecklistPanel
+from .settings_ui import SourceFolderDialog
+from .standards import load_catalog
 from .standards_ui import StandardsPanel
-from .templates import Comparison, TemplateSourceError, apply_upgrade, compare, load_template, resolve_template
+from .templates import (Comparison, TemplateSourceError, apply_upgrade, compare, load_template, resolve_template,
+                        prepare_upgrade, template_file_choices)
 from .template_ui import (MATCH_COLOUR as FOUND_COLOUR, MODIFIED_COLOUR, MISSING_COLOUR,
-                          TemplateReviewDialog, show_details, show_text_details)
+                          TemplateReviewDialog)
 from .yaml_fields import SetupError
+from .widgets import DropdownWheelFilter
+from .source_repository_ui import SourceRepositoryPanel
 
 
 def _wrap_text(control: wx.StaticText, value: str, width: int) -> str:
@@ -49,7 +54,6 @@ class ProjectManagerFrame(wx.Frame):
         self._context: ProjectContext | None = None
         self.template_comparison: Comparison | None = None
         self.template_source: Path | None = None
-        self.template_error_details: str | None = None
         self._overview_layout_pending = False
         self._overview_text_widths = {}
         icon_path = Path(__file__).resolve().parent.parent / "resources" / "icon.png"
@@ -98,14 +102,18 @@ class ProjectManagerFrame(wx.Frame):
         self.template_status.SetMinSize((1, -1))
         template_box.Add(self.template_status, 0, wx.EXPAND)
         actions = wx.BoxSizer(wx.HORIZONTAL)
-        self.template_details_button = wx.Button(box.GetStaticBox(), label='Details…')
-        self.template_details_button.Bind(wx.EVT_BUTTON, self._template_details)
         self.template_review_button = wx.Button(box.GetStaticBox(), label='Review upgrade…')
         self.template_review_button.Bind(wx.EVT_BUTTON, self._review_template)
-        for button in (self.template_details_button, self.template_review_button):
+        self.update_template_button = wx.Button(box.GetStaticBox(), label='Update template files')
+        self.update_template_button.Bind(wx.EVT_BUTTON, self._update_template_files)
+        self.update_template_button.SetToolTip('Update shared files from the selected local template with backups. Keep project documents, metadata, workflow status and release history.')
+        for button in (self.template_review_button, self.update_template_button):
             button.Disable()
             actions.Add(button, 0, wx.RIGHT, 8)
         template_box.Add(actions, 0, wx.TOP, 6)
+        self.template_repository = SourceRepositoryPanel(box.GetStaticBox(), storage,
+                                                        self._template_source_updated)
+        template_box.Add(self.template_repository, 0, wx.EXPAND | wx.TOP, 6)
         grid.Add(template_box, 1, wx.EXPAND)
         grid.Add(wx.StaticText(box.GetStaticBox(), label='Standards repository'), 0, wx.ALIGN_CENTER_VERTICAL)
         standards_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -121,7 +129,12 @@ class ProjectManagerFrame(wx.Frame):
         self.standards_status = wx.StaticText(box.GetStaticBox(), label='Choose a shared standards repository above.',
                                               style=wx.ST_NO_AUTORESIZE)
         self.standards_status.SetMinSize((1, -1))
-        grid.Add(self.standards_status, 1, wx.EXPAND)
+        standards_box = wx.BoxSizer(wx.VERTICAL)
+        standards_box.Add(self.standards_status, 0, wx.EXPAND)
+        self.standards_repository = SourceRepositoryPanel(box.GetStaticBox(), storage,
+                                                         self._standards_source_updated)
+        standards_box.Add(self.standards_repository, 0, wx.EXPAND | wx.TOP, 6)
+        grid.Add(standards_box, 1, wx.EXPAND)
         grid.Add(wx.StaticText(box.GetStaticBox(), label='Backups folder'), 0, wx.ALIGN_CENTER_VERTICAL)
         backups_row = wx.BoxSizer(wx.HORIZONTAL)
         self.backup_path = (storage or data_directory()) / 'backups'
@@ -164,6 +177,9 @@ class ProjectManagerFrame(wx.Frame):
         self.standards_panels = (self.rules_panel, self.stackup_panel)
         self.notebook.AddPage(self.rules_panel, 'Design Rules')
         self.notebook.AddPage(self.stackup_panel, 'Stackup')
+        self.checklist_panel = ChecklistPanel(self.notebook, storage, self._verify_project)
+        self.notebook.AddPage(self.checklist_panel, 'Checklist')
+        self.notebook.Bind(wx.EVT_NOTEBOOK_PAGE_CHANGED, self._page_changed)
         layout.Add(self.notebook, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 16)
         footer = wx.BoxSizer(wx.HORIZONTAL)
         footer.Add(wx.StaticText(panel, label=f"Version {__version__} · KiCad 9 / 10"), 1, wx.ALIGN_CENTER_VERTICAL)
@@ -177,6 +193,9 @@ class ProjectManagerFrame(wx.Frame):
         self.SetSizer(outer)
         self.SetMinSize((860, 640))
         self.Bind(wx.EVT_CLOSE, self._on_close)
+        self._wheel_filter = DropdownWheelFilter(self)
+        wx.EvtHandler.AddFilter(self._wheel_filter)
+        self.Bind(wx.EVT_WINDOW_DESTROY, self._destroy_filter)
         overview.Bind(wx.EVT_SIZE, self._on_overview_size)
         self.Centre()
         wx.CallAfter(self.refresh)
@@ -184,6 +203,12 @@ class ProjectManagerFrame(wx.Frame):
     def _append_log(self, message: str) -> None:
         self.log.AppendText(f"{datetime.now():%H:%M:%S}  {message}\n")
         self.backups_button.Enable(self.backup_path.is_dir())
+
+    def _destroy_filter(self, event):
+        if event.GetEventObject() is self and self._wheel_filter is not None:
+            wx.EvtHandler.RemoveFilter(self._wheel_filter)
+            self._wheel_filter = None
+        event.Skip()
 
     def _on_notebook_size(self, event):
         # Keep the native tabs and use the unused right end of their strip.
@@ -254,7 +279,17 @@ class ProjectManagerFrame(wx.Frame):
     def _choose_standards(self):
         if any(panel._busy for panel in self.standards_panels):
             return
-        with StandardsFolderDialog(self, self.storage) as dialog:
+
+        def select(value):
+            if value:
+                value = str(load_catalog(Path(value).expanduser()).root)
+            save_settings({'standards_directory': value}, self.storage)
+            return value
+
+        folder = load_standards(self.storage)
+        with SourceFolderDialog(self, 'Standards repository',
+                                'Choose the folder containing catalog.json and your reusable rules and stackups.',
+                                folder, folder or str(Path.home()), select) as dialog:
             if dialog.ShowModal() == wx.ID_OK:
                 for panel in self.standards_panels:
                     panel.reload_catalog()
@@ -273,7 +308,37 @@ class ProjectManagerFrame(wx.Frame):
                   if catalog else error or 'Choose a shared standards repository above.')
         self.standards_status.SetLabel(status)
         self.standards_status.SetToolTip(status)
+        self.standards_repository.set_source(Path(folder) if folder else None)
         self._queue_overview_layout()
+
+    def _standards_source_updated(self):
+        for panel in self.standards_panels:
+            panel.reload_catalog()
+        self._append_log('Standards source pulled and catalog reloaded.')
+
+    def _template_source_updated(self):
+        # Refresh the source comparison without clearing unsaved Project Setup edits.
+        source = self.template_source
+        if not source or not self._context or not self._context.project_saved:
+            return
+        root = Path(self._context.project_file).parent
+
+        def worker():
+            comparison, error = None, None
+            try:
+                comparison = compare(root, load_template(source))
+            except (ValueError, OSError) as exc:
+                error = exc
+            wx.CallAfter(finish, comparison, error)
+
+        def finish(comparison, error):
+            if (self._closing or source != self.template_source or not self._context
+                    or Path(self._context.project_file).parent != root):
+                return
+            self._show_template_result(source, comparison, error)
+            self._append_log('Template source pulled and comparison refreshed.')
+
+        threading.Thread(target=worker, daemon=True, name='template-source').start()
 
     def refresh(self, discard: bool = False) -> None:
         if self._busy or self._closing or any(panel._busy for panel in self.standards_panels):
@@ -288,10 +353,13 @@ class ProjectManagerFrame(wx.Frame):
             panel.set_context(None)
         self.template_comparison = None
         self.choose_template_button.Disable()
-        self.template_details_button.Disable()
         self.template_review_button.Disable()
+        self.update_template_button.Disable()
         for panel in self.standards_panels:
             panel.reload_catalog()
+        for repository in (self.template_repository, self.standards_repository):
+            if repository.settings.get('automatic'):
+                repository.check()
 
         def worker() -> None:
             context, error, setup_result = None, None, None
@@ -333,15 +401,16 @@ class ProjectManagerFrame(wx.Frame):
         self._context = context
         self.template_comparison = None
         self.template_source = None
-        self.template_error_details = None
         for panel in self.standards_panels:
             panel.set_context(context if not error else None)
+        self.checklist_panel.set_context(context if not error else None)
         if error or context is None:
             for field in self.fields.values():
                 field.ChangeValue("—")
                 field.SetForegroundColour(self._neutral_colour)
                 field.SetToolTip("")
             self.template_path.ChangeValue('—')
+            self.template_repository.set_source(None)
             self._set_template_status('Project unavailable', self._neutral_colour)
             self.setup_panel.clear(error or 'Project unavailable. Click Refresh to reconnect.')
             self._append_log(error or "No project was returned.")
@@ -351,30 +420,15 @@ class ProjectManagerFrame(wx.Frame):
             self.fields[key].ChangeValue(value)
             self.fields[key].SetToolTip(value)
         source, comparison, template_error = template_result
-        self.template_source, self.template_comparison = source, comparison
+        self._show_template_result(source, comparison, template_error)
         self.choose_template_button.Enable(context.project_saved)
-        self.choose_template_button.SetLabel('Change…' if source else 'Choose template…')
-        self.template_path.ChangeValue(str(source) if source else 'No template selected')
-        self.template_path.SetToolTip(str(source) if source else '')
-        self.template_details_button.Enable(comparison is not None or template_error is not None)
-        self.template_review_button.Enable(comparison is not None)
-        if comparison:
-            self._set_template_status(comparison.summary, {'green': FOUND_COLOUR, 'red': MISSING_COLOUR,
-                                      'amber': MODIFIED_COLOUR, 'neutral': self._neutral_colour}[comparison.colour])
-            self.template_review_button.SetLabel('Review adoption…' if not comparison.version else 'Review upgrade…')
-        else:
-            message = (template_error.summary if isinstance(template_error, TemplateSourceError)
-                       else 'Could not check the template. See Details… for the reason.' if template_error
-                       else 'Choose a template to check project files.')
-            if template_error:
-                self.template_error_details = f'Template: {source or "not selected"}\n\n{template_error}'
-            self._set_template_status(message, MISSING_COLOUR if template_error else self._neutral_colour)
         self.Layout()
         self._append_log("Project information refreshed.")
         if setup_result:
             snapshot, values, setup_error = setup_result
             if snapshot is not None:
-                self.setup_panel.load(snapshot, values, int(context.kicad_version.split('.')[0]))
+                self.setup_panel.load(snapshot, values, int(context.kicad_version.split('.')[0]),
+                                      Path(context.project_file).with_suffix('.kicad_sch'))
             else:
                 self.setup_panel.clear(setup_error)
                 self._append_log(setup_error)
@@ -383,38 +437,53 @@ class ProjectManagerFrame(wx.Frame):
         if context.project_file and not context.project_saved:
             self._append_log("The reported project file does not exist on disk yet.")
 
+    def _show_template_result(self, source, comparison, template_error):
+        self.template_source, self.template_comparison = source, comparison
+        self.template_repository.set_source(source)
+        self.choose_template_button.SetLabel('Change…' if source else 'Choose template…')
+        self.template_path.ChangeValue(str(source) if source else 'No template selected')
+        self.template_path.SetToolTip(str(source) if source else '')
+        self.template_review_button.Enable(comparison is not None)
+        self.update_template_button.Enable(comparison is not None)
+        if comparison:
+            self._set_template_status(comparison.summary, {'green': FOUND_COLOUR, 'red': MISSING_COLOUR,
+                                      'amber': MODIFIED_COLOUR, 'neutral': self._neutral_colour}[comparison.colour])
+            self.template_review_button.SetLabel('Review adoption…' if not comparison.version else 'Review upgrade…')
+        else:
+            message = (template_error.summary if isinstance(template_error, TemplateSourceError)
+                       else 'Could not check the template. See the status tooltip and Activity for the reason.' if template_error
+                       else 'Choose a template to check project files.')
+            if template_error:
+                details = f'Template: {source or "not selected"}\n\n{template_error}'
+                self._append_log(details)
+            self._set_template_status(message, MISSING_COLOUR if template_error else self._neutral_colour)
+            if template_error:
+                self.template_status.SetToolTip(details)
+
     def _choose_template(self):
         if self._busy or not self._context or not self._context.project_saved:
             return None
         if not self._can_discard():
             return None
-        start = kicad_user_template_directory(major=int(self._context.kicad_version.split('.')[0]))
-        while not start.exists() and start != start.parent:
-            start = start.parent
-        dialog = wx.DirDialog(self, "Choose the versioned KiCad template folder",
-                              str(start) if start.exists() else "",
-                              style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST)
-        if dialog.ShowModal() != wx.ID_OK:
-            dialog.Destroy()
-            return None
-        selected = dialog.GetPath()
-        dialog.Destroy()
-        try:
-            template = load_template(Path(selected))
+
+        def select(value):
+            if not value:
+                raise SetupError('Choose a versioned KiCad template folder.')
+            template = load_template(Path(value).expanduser())
             compare(Path(self._context.project_file).parent, template)
             save_template(str(template.root), self.storage, template.identity)
-        except (SetupError, OSError) as exc:
-            wx.MessageBox(str(exc), 'KiCad template', wx.OK | wx.ICON_ERROR, self)
-            return None
+            return template
+
+        start = kicad_user_template_directory(major=int(self._context.kicad_version.split('.')[0]))
+        with SourceFolderDialog(self, 'KiCad template',
+                                'Choose a versioned KiCad template folder containing its Project Manager manifest.',
+                                self.template_source, str(start), select) as dialog:
+            if dialog.ShowModal() != wx.ID_OK:
+                return None
+            template = dialog.selection
         self.template_source = template.root
         self.refresh(discard=True)
         return template
-
-    def _template_details(self, event):
-        if self.template_comparison:
-            show_details(self, self.template_comparison)
-        elif self.template_error_details:
-            show_text_details(self, self.template_error_details)
 
     def _review_template(self, event):
         if self._busy or not self.template_comparison or not self._can_discard():
@@ -442,6 +511,19 @@ class ProjectManagerFrame(wx.Frame):
         finally:
             if applied or refreshed:
                 self.refresh(discard=True)
+
+    def _update_template_files(self, event):
+        if self._busy or not self.template_comparison or not self._can_discard():
+            return
+        try:
+            comparison = compare(self.template_comparison.root, load_template(self.template_source))
+            plan = prepare_upgrade(comparison, template_file_choices(comparison))
+            backup = apply_upgrade(plan, self.storage, self._verify_project)
+            self._append_log(f'Template files updated; project documents kept. Backup: {backup}' if backup
+                             else 'Template files already match; project documents kept.')
+            self.refresh(discard=True)
+        except (SetupError, OSError) as exc:
+            wx.MessageBox(str(exc), 'Update template files', wx.OK | wx.ICON_ERROR, self)
 
     def _on_applied(self, backup: Path | None):
         self._append_log(f'Project setup saved. Backup: {backup}' if backup else 'No changes were needed.')
@@ -472,10 +554,19 @@ class ProjectManagerFrame(wx.Frame):
         self._append_log(f'Standards applied. Backup: {backup}' if backup else 'Selected standards were already applied.')
 
     def _can_discard(self) -> bool:
+        if self.checklist_panel.dirty and not self.checklist_panel.flush():
+            if wx.MessageBox('The checklist could not be saved. Discard your unsaved checklist edits?',
+                             'Checklist', wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION, self) != wx.YES:
+                return False
         if not self.setup_panel.dirty:
             return True
         return wx.MessageBox('Discard your unsaved Project Setup edits?', 'Project Setup',
                              wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION, self) == wx.YES
+
+    def _page_changed(self, event):
+        event.Skip()
+        if event.GetSelection() == 4:
+            self.checklist_panel.refresh_review_status()
 
     def _on_close(self, event: wx.CloseEvent) -> None:
         if event.CanVeto() and any(panel._busy for panel in self.standards_panels):
@@ -487,4 +578,6 @@ class ProjectManagerFrame(wx.Frame):
             event.Veto()
             return
         self._closing = True
+        if self.checklist_panel._timer:
+            self.checklist_panel._timer.Stop()
         self.Destroy()

@@ -183,7 +183,8 @@ class StandardsPanel(wx.ScrolledWindow):
                 self.selected_stackup.summary.ChangeValue(str(exc))
                 return
         self.selected_stackup.set_stackup(selected, reference=current if preset else None)
-        self.current_stackup.set_stackup(current, reference=selected if preset else None, board_thickness=thickness)
+        self.current_stackup.set_stackup(current, reference=selected if preset else None, board_thickness=thickness,
+                                        reference_first=False)
 
     def _fill_rule_values(self, values=None):
         if self.kind != 'rules':

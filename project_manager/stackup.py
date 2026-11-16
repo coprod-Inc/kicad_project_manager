@@ -63,6 +63,32 @@ class StackupMatch:
     exact: bool
 
 
+def layer_changes(current: PhysicalLayer | None, selected: PhysicalLayer | None) -> tuple[str, ...]:
+    """Describe every changed layer property, including the electrical values."""
+    if current is None or selected is None:
+        return ('Added layer' if current is None else 'Removed layer',)
+    changes = []
+    for key, label in (('kind', 'Type'), ('material', 'Material'), ('thickness_mm', 'Thickness'),
+                       ('color', 'Color'), ('epsilon_r', 'εr'), ('loss_tangent', 'Loss tan'),
+                       ('locked', 'Thickness locked'), ('sublayer_count', 'Ply count')):
+        before, after = getattr(current, key), getattr(selected, key)
+        if key in ('thickness_mm', 'epsilon_r', 'loss_tangent'):
+            if (None if before is None else round(before, 9)) == (None if after is None else round(after, 9)):
+                continue
+        elif before == after:
+            continue
+        def display(value):
+            if value is None or value == '':
+                return 'unspecified'
+            if isinstance(value, bool):
+                return 'yes' if value else 'no'
+            if isinstance(value, (float, int)):
+                return f'{value:g}' + (' mm' if key == 'thickness_mm' else '')
+            return value
+        changes.append(f'{label}: {display(before)} → {display(after)}')
+    return tuple(changes)
+
+
 def stackup_identity(preset: Preset) -> str:
     manufacturer = preset.details.get('manufacturer')
     code = preset.details.get('manufacturer_stackup_id')

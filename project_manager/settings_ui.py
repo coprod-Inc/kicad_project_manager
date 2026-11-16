@@ -1,49 +1,56 @@
-"""Choose and validate the shared standards repository."""
+"""Shared source-folder chooser for templates and standards."""
 from __future__ import annotations
 
 from pathlib import Path
 import wx
 
-from .preferences import load_standards, save_settings
-from .standards import load_catalog
 
-
-class StandardsFolderDialog(wx.Dialog):
-    def __init__(self, parent, storage: Path | None = None):
-        super().__init__(parent, title='Standards Repository', size=(740, 280),
+class SourceFolderDialog(wx.Dialog):
+    def __init__(self, parent, title, description, folder, browse_start, on_select):
+        super().__init__(parent, title=title,
                          style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
-        self.storage = storage
+        self.browse_start = browse_start
+        self.on_select = on_select
+        self.selection = None
         layout = wx.BoxSizer(wx.VERTICAL)
-        box = wx.StaticBoxSizer(wx.VERTICAL, self, 'Standards Folder')
-        text = wx.StaticText(box.GetStaticBox(), label='Choose the folder containing catalog.json and your reusable rules and stackups.\nThis setting is shared by your projects on this computer.')
-        text.Wrap(660)
-        box.Add(text, 0, wx.ALL, 12)
-        self.folder = wx.DirPickerCtrl(box.GetStaticBox(), path=load_standards(storage),
-                                       message='Choose your standards folder',
-                                       style=wx.DIRP_DEFAULT_STYLE | wx.DIRP_USE_TEXTCTRL)
-        box.Add(self.folder, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
-        hint = wx.StaticText(box.GetStaticBox(), label='A local folder or an existing Git checkout both work. Git download/update controls will be added later.')
-        hint.Wrap(660)
-        box.Add(hint, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
-        layout.Add(box, 0, wx.EXPAND | wx.ALL, 14)
-
-        layout.AddStretchSpacer()
+        note = wx.StaticText(self, label=description)
+        note.Wrap(self.FromDIP(650))
+        layout.Add(note, 0, wx.ALL, 14)
+        row = wx.BoxSizer(wx.HORIZONTAL)
+        self.folder = wx.TextCtrl(self, value=str(folder or ''))
+        self.folder.SetMinSize((self.FromDIP(480), -1))
+        row.Add(self.folder, 1, wx.EXPAND | wx.RIGHT, 10)
+        browse = wx.Button(self, label='Browse…')
+        browse.Bind(wx.EVT_BUTTON, self._browse)
+        row.Add(browse)
+        layout.Add(row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 14)
+        hint = wx.StaticText(self, label='Use a local folder or an existing Git checkout. Optional Git settings are on Overview.')
+        hint.Wrap(self.FromDIP(650))
+        layout.Add(hint, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 14)
         buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
-        self.FindWindowById(wx.ID_OK).SetLabel('Use Folder')
+        self.FindWindow(wx.ID_OK).SetLabel('Use folder')
         self.Bind(wx.EVT_BUTTON, self._save, id=wx.ID_OK)
         layout.Add(buttons, 0, wx.EXPAND | wx.ALL, 14)
-        self.SetSizer(layout)
-        self.SetMinSize((680, 280))
-        self.Fit()
+        self.SetSizerAndFit(layout)
+        self.SetMinSize(self.GetSize())
         self.CentreOnParent()
+
+    def _browse(self, event):
+        start = Path(self.folder.GetValue().strip() or self.browse_start).expanduser()
+        while not start.exists() and start != start.parent:
+            start = start.parent
+        dialog = wx.DirDialog(self, f'Choose a folder — {self.GetTitle()}', str(start),
+                              style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST)
+        try:
+            if dialog.ShowModal() == wx.ID_OK:
+                self.folder.ChangeValue(dialog.GetPath())
+        finally:
+            dialog.Destroy()
 
     def _save(self, event):
         try:
-            value = self.folder.GetPath().strip()
-            if value:
-                value = str(load_catalog(Path(value)).root)
-            save_settings({'standards_directory': value}, self.storage)
+            self.selection = self.on_select(self.folder.GetValue().strip())
         except (OSError, ValueError) as exc:
-            wx.MessageBox(str(exc), 'Standards repository', wx.OK | wx.ICON_ERROR, self)
+            wx.MessageBox(str(exc), self.GetTitle(), wx.OK | wx.ICON_ERROR, self)
             return
         self.EndModal(wx.ID_OK)

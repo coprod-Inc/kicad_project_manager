@@ -17,6 +17,7 @@ PAYLOAD = (
     "docs/screenshots/overview.png", "docs/screenshots/project-setup.png",
     "docs/screenshots/design-rules.png", "docs/screenshots/stackup.png",
     "docs/screenshots/template-review.png",
+    "docs/screenshots/release-preparation.png", "docs/screenshots/checklist.png",
     "project_manager/__init__.py", "project_manager/context.py", "project_manager/compat.py", "project_manager/ui.py",
     "project_manager/yaml_fields.py", "project_manager/setup.py",
     "project_manager/preferences.py", "project_manager/setup_ui.py",
@@ -28,6 +29,11 @@ PAYLOAD = (
     "project_manager/instance.py",
     "project_manager/templates.py", "project_manager/template_ui.py", "project_manager/diff_ui.py",
     "project_manager/impedance_table.py", "project_manager/impedance_ui.py",
+    "project_manager/release.py", "project_manager/release_ui.py",
+    "project_manager/checklist.py", "project_manager/checklist_ui.py",
+    "project_manager/widgets.py",
+    "project_manager/source_repository.py",
+    "project_manager/source_repository_ui.py",
     "resources/icon.png",
 )
 

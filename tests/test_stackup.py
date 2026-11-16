@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from project_manager.stackup import (appearance_override, matching_stackups, parse_stackup, physical_summary,
-                                    read_board_stackup, stackup_identity)
+                                    read_board_stackup, stackup_identity, layer_changes)
 from project_manager.standards import StandardsError, load_catalog
 from project_manager.standards_apply import apply_standards, plan_standards
 from project_manager.sexpr import atoms, forms
@@ -41,6 +41,13 @@ class StackupTests(unittest.TestCase):
         self.assertEqual(ply.material, '')
         self.assertIsNone(ply.epsilon_r)
         self.assertIsNone(parse_stackup('(stackup)').impedance_controlled)
+
+    def test_layer_change_reason_includes_dielectric_constant_and_ignores_float_noise(self):
+        layer = parse_stackup(self.preset.files['stackup_file']).layers[4]
+        before = replace(layer, epsilon_r=4.5)
+        after = replace(layer, epsilon_r=4.6)
+        self.assertEqual(layer_changes(before, after), ('εr: 4.5 → 4.6',))
+        self.assertEqual(layer_changes(before, replace(before, thickness_mm=layer.thickness_mm + 1e-12)), ())
 
     def test_invalid_duplicate_layers_and_nonfinite_properties_fail(self):
         for text in ['(stackup (layer "F.Cu" (type "copper") (thickness -1)))',

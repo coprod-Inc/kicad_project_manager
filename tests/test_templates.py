@@ -10,7 +10,7 @@ from project_manager.preferences import save_template
 from project_manager.setup import CONFIG, METADATA, WORKFLOW, read_setup, prepare, apply
 from project_manager.templates import (MANIFEST, STATE, DOCUMENTS, apply_upgrade, build_manifest,
                                        compare, load_template, policy, prepare_upgrade,
-                                       resolve_template, version_tuple)
+                                       resolve_template, version_tuple, template_file_choices)
 from project_manager.yaml_fields import ScalarBlock, SetupError
 from tests.fixtures import sample_project
 
@@ -94,6 +94,30 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(comparison.colour, 'green')
         self.assertFalse(comparison.problems)
         self.assertFalse((self.project / STATE).exists())
+
+    def test_bulk_template_update_keeps_documents_metadata_status_ci_and_history(self):
+        values = {key: f'Project {key}' for key in METADATA}
+        apply(prepare(read_setup(self.project), values, 'CHECKED', kicad_major=10), self.storage)
+        document = sorted(DOCUMENTS)[0]
+        (self.project / document).write_text('My project notes\n')
+        selection = self.project / 'kibot_resources/project_manager/release.json'
+        selection.write_text('{"schema_version":1,"version":""}\n')
+        selection_before = selection.read_bytes()
+        (self.project / VAR_PATH).write_text(HISTORY + VARIABLES)
+        script = 'kibot_resources/scripts/helper.py'
+        (self.template.root / script).write_text('print("new shared version")\n')
+        self.template = release(self.template.root, '1.1.0')
+        comparison = self.inspect()
+        choices = template_file_choices(comparison)
+        self.assertEqual(choices[document], 'review')
+        apply_upgrade(prepare_upgrade(comparison, choices), self.storage)
+        self.assertEqual((self.project / document).read_text(), 'My project notes\n')
+        self.assertEqual((self.project / script).read_text(), 'print("new shared version")\n')
+        self.assertEqual(read_setup(self.project).metadata, values)
+        self.assertEqual(read_setup(self.project).status, 'CHECKED')
+        self.assertEqual(read_setup(self.project).kicad_major, 10)
+        self.assertIn(HISTORY, (self.project / VAR_PATH).read_text())
+        self.assertEqual(selection.read_bytes(), selection_before)
 
     def test_maintenance_tests_and_optional_workflow_are_never_managed(self):
         tests = self.template.root / 'meta/tests'

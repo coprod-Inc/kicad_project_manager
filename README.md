@@ -26,10 +26,18 @@ the PCM package. For manual clone/symlink setup, see [development installation](
 
 | Page | What to do |
 | --- | --- |
-| **Overview** | Choose a local versioned template and standards folder. Review template differences and find backups. |
-| **Project Setup** | Edit metadata, authors, reviewer and workflow status; preview or apply. Requires compatible KiBot configuration. |
+| **Overview** | Choose template and standards sources, optionally check Git updates and pull. Update shared template files and find backups. |
+| **Project Setup** | Edit metadata and workflow status; prepare a CHECKED board release with Unreleased notes and versioned history variables. Requires compatible KiBot configuration. |
 | **Design Rules** | Select a rule profile, compare constraints and custom rules, then apply. |
 | **Stackup** | Compare saved and proposed constructions, adjust appearance, apply a preset or save an unmatched saved construction as a new preset. |
+| **Checklist** | Record generic PCB review checks, names, comments and dates locally; optionally record a completed review of saved design files. No Git or standards source is required. |
+
+Release preparation and Checklist are local development additions for 1.2.0;
+the published stable package remains 1.1.0.
+
+**Update template files** updates shared automation and resources while preserving
+project documents and release history. Optional **Git…** settings enable background
+source checks; **Pull** always needs a click. Local folders work without Git.
 
 In **Review upgrade…**, **Project documents** groups editable notes, README
 sources, licences and project ignore rules. **Template
@@ -61,6 +69,8 @@ Source folders are local; update them separately, then **Refresh**.
 | [<img src="docs/screenshots/overview.png" width="420" alt="Overview: project, template and standards sources">](docs/screenshots/overview.png) | [<img src="docs/screenshots/project-setup.png" width="420" alt="Project Setup: metadata and workflow status">](docs/screenshots/project-setup.png) |
 | **Design Rules** | **Stackup** |
 | [<img src="docs/screenshots/design-rules.png" width="420" alt="Design Rules: constraints and custom-rule comparison">](docs/screenshots/design-rules.png) | [<img src="docs/screenshots/stackup.png" width="420" alt="Stackup: current and selected PCB constructions">](docs/screenshots/stackup.png) |
+| **Release preparation (CHECKED)** | **Checklist** |
+| [<img src="docs/screenshots/release-preparation.png" width="420" alt="Project Setup: Unreleased notes and board release version">](docs/screenshots/release-preparation.png) | [<img src="docs/screenshots/checklist.png" width="420" alt="Local review checklist with reviewer names, dates and comments">](docs/screenshots/checklist.png) |
 
 [Usage, compatibility and recovery](docs/usage.md) ·
 [Standards format](docs/standards-format.md) ·

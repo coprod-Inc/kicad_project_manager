@@ -57,9 +57,11 @@ session token automatically. Diagnostics contain local paths.
 ```sh
 python -m pip install -r requirements.txt -r requirements-dev.txt
 python -m unittest discover -s tests -v
-python -m scripts.build_release --tag v1.1.0
+python -m scripts.build_release --tag v1.2.0
 python -m scripts.validate_package --schemas /usr/share/kicad/schemas
 python -m scripts.smoke_gui --output .dev/gui.png
+python -m scripts.smoke_review --output .dev/review
+python -m scripts.smoke_sources
 python -m scripts.smoke_stackup_save --output .dev/save-preset
 ```
 
@@ -69,10 +71,11 @@ integration verifies metadata and generated documentation. Test fixtures and
 screenshots use synthetic projects and standards. Platform installation and
 save/apply/reopen checks in KiCad remain useful before releases.
 
-Generate the README screenshots from the actual four-page interface:
+Generate the main README screenshots from the actual interface:
 
 ```sh
 python -m scripts.capture_screenshots --output docs/screenshots
+python -m scripts.smoke_review --output .dev/review
 ```
 
 `project_manager/` contains runtime code; `tests/` contains regression fixtures

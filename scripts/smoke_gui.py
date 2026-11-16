@@ -24,12 +24,12 @@ from project_manager.context import ContextError, ProjectContext
 from project_manager.ui import FOUND_COLOUR, MISSING_COLOUR, ProjectManagerFrame, _wrap_text
 from project_manager.setup import read_setup
 from project_manager.setup_ui import PreviewDialog, ProjectSetupPanel
-from project_manager.template_ui import (CUSTOM_COLOUR, MATCH_COLOUR, MODIFIED_COLOUR, TemplateDetailsDialog,
+from project_manager.template_ui import (CUSTOM_COLOUR, MATCH_COLOUR, MODIFIED_COLOUR,
                                         TemplateReviewDialog, item_colour, DIFF_ADDED_COLOUR, DIFF_REMOVED_COLOUR)
 from project_manager.templates import (IGNORE_SHARED, IGNORE_USER, LICENSE_FILE, README_SOURCE, STATE, apply_upgrade,
                                        compare, load_template, prepare_upgrade)
 from project_manager.preferences import load_standards
-from project_manager.settings_ui import StandardsFolderDialog
+from project_manager.settings_ui import SourceFolderDialog
 from tests.fixtures import sample_project
 from tests.test_templates import release, template_folder
 from tests.standards_fixtures import RULES, STACKUP, catalog_folder, detailed_catalog, saved_board, write_stackup
@@ -121,7 +121,7 @@ def main() -> int:
         dialog._action_changed(None)
 
     def check_result_colours():
-        print('GUI: checking Details colors', flush=True)
+        print('GUI: checking template review colors', flush=True)
         coloured_project = sample_project(base / 'colour-project')
         config = coloured_project / 'kibot_yaml/kibot_main.yaml'
         config.write_bytes(config.read_bytes().replace(b'UNRELATED:', b'PROJECT_OVERRIDE:'))
@@ -138,28 +138,6 @@ def main() -> int:
                     for item in comparison.items}
         assert set(colour.Get() for colour in expected.values()) == {
             MATCH_COLOUR.Get(), CUSTOM_COLOUR.Get(), MODIFIED_COLOUR.Get(), MISSING_COLOUR.Get()}
-        with TemplateDetailsDialog(frame, comparison) as dialog:
-            def inspect_details(dialog=dialog):
-                try:
-                    contents = dialog.results.GetValue()
-                    capture(dialog, args.output.with_name('template-details-colours.png'))
-                    for item in comparison.items:
-                        offset = contents.index(f'{item.status}: {item.path}')
-                        style = wx.TextAttr()
-                        assert dialog.results.GetStyle(offset, style), f'No style at {offset}: {item.path}'
-                        actual = style.GetTextColour()
-                        # Cocoa can return an NSColor with identical RGBA but
-                        # different native colour-space identity.
-                        assert actual.Get() == expected[item.path].Get(), (
-                            f'{item.path}: actual={actual.Get()}, expected={expected[item.path].Get()}')
-                except Exception as exc:
-                    failures.append(f'Details colors: {exc}')
-                finally:
-                    dialog.EndModal(wx.ID_OK)
-            inspection = wx.CallLater(200, inspect_details)
-            dialog.ShowModal()
-            inspection.Stop()
-        assert not failures
         with TemplateReviewDialog(frame, comparison) as dialog:
             for category in ('documents', 'template'):
                 dialog.show_category(category)
@@ -338,6 +316,41 @@ def main() -> int:
             assert README_SOURCE not in dialog.edits
             assert dialog.editor.GetValue() == 'External editor saved this README\n'
             assert dialog.choices[README_SOURCE] == 'review'
+
+    def check_bulk_template_update():
+        print('GUI: checking shared template update buttons and retained document drafts', flush=True)
+        source = template_folder(base / 'bulk-template')
+        root = base / 'bulk-project'
+        shutil.copytree(source.root, root)
+        script = 'kibot_resources/scripts/helper.py'
+        (source.root / script).write_text('print("bulk shared update")\n')
+        source = release(source.root, '1.1.0')
+        original_document = (root / README_SOURCE).read_bytes()
+        with TemplateReviewDialog(frame, compare(root, source),
+                                  apply_plan=lambda plan: apply_upgrade(plan, base / 'bulk-backups')) as dialog:
+            dialog.select_path(README_SOURCE)
+            dialog.editor.SetValue('My pending document draft\n')
+            event = wx.CommandEvent(wx.EVT_BUTTON.typeId, dialog.update_template_button.GetId())
+            dialog.update_template_button.GetEventHandler().ProcessEvent(event)
+            assert (root / script).read_bytes() == source.files[script]
+            assert (root / README_SOURCE).read_bytes() == original_document
+            assert dialog.edits[README_SOURCE] == b'My pending document draft\n'
+            assert dialog.choices[README_SOURCE] == 'edit'
+
+        (root / script).unlink()
+        previous = frame.template_source, frame.template_comparison
+        frame.template_source, frame.template_comparison = source.root, compare(root, source)
+        try:
+            with patch.object(frame, '_can_discard', return_value=True), \
+                 patch.object(frame, '_verify_project'), patch.object(frame, 'storage', base / 'bulk-overview-settings'), \
+                 patch.object(frame, 'refresh') as refreshed:
+                event = wx.CommandEvent(wx.EVT_BUTTON.typeId, frame.update_template_button.GetId())
+                frame.update_template_button.GetEventHandler().ProcessEvent(event)
+                refreshed.assert_called_once_with(discard=True)
+            assert (root / script).read_bytes() == source.files[script]
+            assert (root / README_SOURCE).read_bytes() == original_document
+        finally:
+            frame.template_source, frame.template_comparison = previous
 
     def check_impedance_editor():
         print('GUI: checking impedance cells, non-destructive imports, raw text and save', flush=True)
@@ -695,7 +708,7 @@ def main() -> int:
         path = frame.template_path.GetScreenRect()
         assert abs((label.y + label.height / 2) - (path.y + path.height / 2)) <= 2
         status = frame.template_status.GetScreenRect()
-        buttons = frame.template_details_button.GetScreenRect()
+        buttons = frame.template_review_button.GetScreenRect()
         assert status.y + status.height <= buttons.y, 'Template status overlaps buttons'
         for line in frame.template_status.GetLabel().splitlines():
             width = frame.template_status.GetTextExtent(line).width
@@ -733,6 +746,8 @@ def main() -> int:
                 assert not frame.backups_button.IsEnabled()
                 assert 'workflow' not in frame.fields
                 assert frame.template_path.GetValue() == 'No template selected'
+                assert not hasattr(frame, 'template_details_button')
+                assert frame.log.GetScreenRect().bottom >= frame.overview.GetScreenRect().bottom - 20
                 assert not hasattr(frame, 'restore_workflow_button')
                 assert frame.setup_panel.snapshot is not None
                 assert not frame.setup_panel.status_choice.IsEnabled()
@@ -754,8 +769,8 @@ def main() -> int:
                 panel = frame.setup_panel
                 panel.fields['PROJECT_NAME'].SetValue('Example controller')
                 panel.fields['BOARD_NAME'].SetValue('Control board')
-                panel.fields['DESIGNER'].SetValue('Alice Martin\nZoë Chen')
-                panel.fields['REVIEWER'].SetValue('Review Engineer')
+                panel.fields['DESIGNER'].SetValue('Alice Martin, Zoë Chen')
+                panel.fields['REVIEWER'].SetValue('Review Engineer, Second Reviewer')
                 panel.fields['GIT_URL'].SetValue('https://example.org/team/controller')
                 assert not panel.status_choice.IsEnabled()
                 assert panel.dirty
@@ -775,7 +790,7 @@ def main() -> int:
             elif phase == 3:
                 saved = read_setup(project)
                 assert saved.metadata['DESIGNER'] == 'Alice Martin; Zoë Chen'
-                assert saved.metadata['REVIEWER'] == 'Review Engineer'
+                assert saved.metadata['REVIEWER'] == 'Review Engineer; Second Reviewer'
                 assert saved.status == 'DRAFT'
                 assert saved.workflow is None
                 seen = {}
@@ -791,11 +806,22 @@ def main() -> int:
                     def Destroy(self):
                         return None
 
-                with patch('project_manager.ui.kicad_user_template_directory', return_value=template.parent), \
-                     patch('project_manager.ui.wx.DirDialog', FakeDirDialog):
+                def select_template():
+                    dialogs = [w for w in wx.GetTopLevelWindows() if isinstance(w, SourceFolderDialog) and w.IsModal()]
+                    assert len(dialogs) == 1
+                    dialog = dialogs[0]
+                    assert not dialog.folder.GetValue()
+                    with patch('project_manager.settings_ui.wx.DirDialog', FakeDirDialog):
+                        dialog._browse(None)
+                    assert dialog.folder.GetValue() == str(template)
+                    event = wx.CommandEvent(wx.EVT_BUTTON.typeId, wx.ID_OK)
+                    dialog.GetEventHandler().ProcessEvent(event)
+
+                wx.CallLater(150, select_template)
+                with patch('project_manager.ui.kicad_user_template_directory', return_value=template.parent):
                     frame._choose_template()
                 assert seen['path'] == str(template.parent)
-                assert 'versioned KiCad template' in seen['message']
+                assert 'KiCad template' in seen['message']
                 phase = 30
             elif phase == 30:
                 assert frame.template_comparison.colour == 'red'
@@ -804,6 +830,7 @@ def main() -> int:
                 check_ci_version_migration()
                 check_document_workspace()
                 check_review_refresh()
+                check_bulk_template_update()
                 check_impedance_editor()
                 check_accepted_license()
                 check_review_selection()
@@ -875,15 +902,25 @@ def main() -> int:
                 launch.assert_called_once_with(str(frame.backup_path))
                 # Save the standards folder through the real OK binding.
                 def save_dialog():
-                    dialogs = [w for w in wx.GetTopLevelWindows() if isinstance(w, StandardsFolderDialog) and w.IsModal()]
+                    dialogs = [w for w in wx.GetTopLevelWindows() if isinstance(w, SourceFolderDialog) and w.IsModal()]
                     assert len(dialogs) == 1
                     dialog = dialogs[0]
-                    dialog.folder.SetPath(str(standards))
+                    dialog.folder.SetValue(str(standards))
                     event = wx.CommandEvent(wx.EVT_BUTTON.typeId, wx.ID_OK)
                     dialog.GetEventHandler().ProcessEvent(event)
                 wx.CallLater(150, save_dialog)
                 frame._choose_standards()
                 assert load_standards(base / 'settings') == str(standards.resolve())
+                def inspect_saved_folder():
+                    dialogs = [w for w in wx.GetTopLevelWindows() if isinstance(w, SourceFolderDialog) and w.IsModal()]
+                    assert len(dialogs) == 1
+                    dialog = dialogs[0]
+                    assert dialog.folder.GetValue() == str(standards.resolve())
+                    assert dialog.folder.IsShownOnScreen()
+                    capture(dialog, args.output.with_name('standards-folder.png'))
+                    dialog.EndModal(wx.ID_CANCEL)
+                wx.CallLater(150, inspect_saved_folder)
+                frame._choose_standards()
                 frame.notebook.SetSelection(2)
                 phase = 6
             elif phase == 6:
@@ -1036,11 +1073,9 @@ def main() -> int:
                 assert 'Installed template modified' in frame._template_status_text
                 assert 'manifest' not in frame.template_status.GetLabel().lower()
                 assert frame.template_status.GetForegroundColour().Get() == MISSING_COLOUR.Get()
-                assert frame.template_details_button.IsEnabled()
                 assert not frame.template_review_button.IsEnabled()
-                with patch('project_manager.ui.show_text_details') as details:
-                    frame._template_details(None)
-                assert 'kibot_resources/scripts/helper.py' in details.call_args.args[1]
+                assert 'kibot_resources/scripts/helper.py' in frame.template_status.GetToolTipText()
+                assert 'kibot_resources/scripts/helper.py' in frame.log.GetValue()
                 assert_template_layout()
                 assert_header_layout()
                 small_status_height = frame.template_status.GetSize().height
@@ -1087,7 +1122,7 @@ def main() -> int:
     if failures:
         raise SystemExit("GUI smoke failed: " + "; ".join(failures))
     print("GUI opens on Overview, adds the workflow through template review, preserves setup and standards, "
-          "and shows readable template errors with Details at narrow and wide window sizes")
+          "and shows readable template errors in Activity at narrow and wide window sizes")
     return 0
 
 

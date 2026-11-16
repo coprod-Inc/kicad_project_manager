@@ -38,6 +38,8 @@ jobs:
       - name: Native Mac GUI regression
         run: |
           "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_gui --output .dev/mac-gui.png
+          "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_review --output .dev/mac-review
+          "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_sources
           "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_stackup_save --output .dev/mac-save-preset
       - uses: actions/upload-artifact@v4
         if: always()
@@ -47,6 +49,7 @@ jobs:
           path: |
             .dev/*.png
             .dev/mac-save-preset
+            .dev/mac-review
   test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -92,11 +95,17 @@ jobs:
         run: xvfb-run -a /usr/bin/python3 -u -m scripts.smoke_gui --output .dev/gui.png
       - name: Exercise Save as preset
         run: xvfb-run -a /usr/bin/python3 -u -m scripts.smoke_stackup_save --output .dev/save-preset
+      - name: Exercise release preparation and local checklist
+        run: xvfb-run -a /usr/bin/python3 -u -m scripts.smoke_review --output .dev/review
+      - name: Exercise optional source repository checks and pulls
+        run: xvfb-run -a /usr/bin/python3 -u -m scripts.smoke_sources
       - uses: actions/upload-artifact@v4
         with:
           name: gui-preview
           include-hidden-files: true
-          path: .dev/gui.png
+          path: |
+            .dev/gui.png
+            .dev/review
   kibot:
     name: KiBot metadata integration (KiCad ${{ matrix.major }})
     strategy:

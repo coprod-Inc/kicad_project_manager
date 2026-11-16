@@ -5,8 +5,14 @@ KiCad Project Manager v1.3.0 (unreleased development)
 - Detect LCSC assignments per component in dedicated fields and primary or
   alternate supplier part-number fields. Prefer the primary LCSC part, then the
   first LCSC alternative. Show the detected source fields and report conflicts.
-- Export a per-board JLCPCB assembly CSV with Comment, Designator, Footprint and
-  LCSC Part #. Preserve individual designators, values and footprints independently
+- Exclude test points from schematic/CSV BOM imports, stock lookups, costing and
+  assembly exports, including test-point references inside grouped CSV rows.
+- Calculate USD totals from the components required for the selected board count.
+  Keep MOQ for supplier price-tier selection and Needed / buy information without
+  charging unused reel or minimum-order components to the board cost estimate.
+- Export a per-board JLCPCB assembly CSV with Comment, Designator, Footprint,
+  Quantity and LCSC Part #. Comment preserves the source Value; Quantity counts
+  the row's designators on one board. Preserve values and footprints independently
   of cost grouping and build quantity. Keep uncoded parts for manual matching;
   refuse ambiguous codes and incomplete assembly data.
 - Include BOM regressions in native Linux and bundled macOS GUI checks.

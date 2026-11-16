@@ -71,10 +71,48 @@ class BomTests(unittest.TestCase):
         calculate(parts, 100, {}, {})
         exported = jlc_bom_csv(parts)
         rows = list(csv.reader(io.StringIO(exported)))
-        self.assertEqual(rows, [['Comment', 'Designator', 'Footprint', 'LCSC Part #'],
-                                ['10k', 'R2,R10', 'R_0603', 'C25804']])
+        self.assertEqual(rows, [['Comment', 'Designator', 'Footprint', 'Quantity', 'LCSC Part #'],
+                                ['10k', 'R2,R10', 'R_0603', '2', 'C25804']])
         self.assertIn('\r\n', exported)
         self.assertEqual(read_csv(exported)[0].quantity, 2)
+
+    def test_test_points_are_excluded_before_cost_grouping_and_export(self):
+        parts = read_csv('Reference,Value,Footprint,LCSC\n'
+                         'R1,10k,0603,C25804\n'
+                         'TP1,10k,0603,C25804\n'
+                         'tp2,Pad,Custom:Pad,C111\n'
+                         'X1,Test_Point,Custom:Pad,C222\n'
+                         'X2,Probe,TestPoint:TestPoint_Pad,C333\n'
+                         'X3,Probe,Custom:TestPoint_Pad,C444\n'
+                         'X4,Clock probe,#example - Testpoints:Pad,C555\n')
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0].references, ('R1',))
+        self.assertEqual(parts[0].quantity, 1)
+        self.assertEqual(calculate(parts, 5, {}, {})[0].required, 5)
+        rows = list(csv.DictReader(io.StringIO(jlc_bom_csv(parts))))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]['Designator'], rows[0]['Quantity']), ('R1', '1'))
+
+    def test_mixed_grouped_rows_remove_only_test_points_and_adjust_quantity(self):
+        for text in (
+            'Reference,Value,Footprint,Quantity\n"R1,TP1,R2",10k,0603,3\n',
+            'Reference,Value,Footprint\n"R1,TP1,R2",10k,0603\n',
+        ):
+            with self.subTest(text=text):
+                part = read_csv(text)[0]
+                self.assertEqual(part.references, ('R1', 'R2'))
+                self.assertEqual(part.quantity, 2)
+        with self.assertRaisesRegex(BomError, 'Quantity must match'):
+            read_csv('Reference,Value,Footprint,Quantity\n"R1,TP1,R2",10k,0603,10\n')
+
+    def test_export_comment_uses_value_even_when_comment_and_mpn_are_also_present(self):
+        parts = read_csv('Reference,Value,Comment,MPN,Footprint,LCSC\n'
+                         'R1,"10k  1%",Purchase note,ABC,Library:R_0603,C25804\n')
+        row = list(csv.DictReader(io.StringIO(jlc_bom_csv(parts))))[0]
+        self.assertEqual(row['Comment'], '10k  1%')
+        self.assertEqual(row['Quantity'], '1')
+        with self.assertRaisesRegex(BomError, 'Value/Comment'):
+            jlc_bom_csv(read_csv('Reference,Value,Comment,Footprint\nR1,,Purchase note,0603\n'))
 
     def test_export_keeps_mixed_footprints_and_values_when_costing_aggregates_by_code(self):
         parts = read_csv('Reference,Value,Footprint,LCSC\n'
@@ -173,13 +211,24 @@ class BomTests(unittest.TestCase):
             self.assertEqual(line.total, Decimal('26.0'))
             self.assertEqual((root / 'kpm-bom.json').read_bytes(), before)
 
-    def test_moq_uses_purchase_quantity_for_tier_and_cost(self):
+    def test_moq_selects_unit_price_tier_but_total_counts_only_required_components(self):
         part = read_csv('Reference,Value,LCSC\nR1,10k,C25804\n')[0]
         data = response()
         data['data']['minPurchaseNum'] = 10
         line = calculate([part], 1, {'C25804': parse_supply('C25804', data)}, {})[0]
         self.assertEqual((line.required, line.purchase), (1, 10))
-        self.assertEqual(line.total, Decimal('0.01750'))
+        self.assertEqual(line.unit_price, Decimal('0.00175'))
+        self.assertEqual(line.total, Decimal('0.00175'))
+
+    def test_reel_moq_does_not_inflate_board_cost_at_different_batch_sizes(self):
+        parts = read_csv('Reference,Value,Footprint,LCSC\n"R1,R2",10k,0603,C25804\n')
+        supply = Supply('C25804', 10000, (PriceTier(5000, None, Decimal('0.0018')),), 0, minimum_order=5000)
+        for boards, required, purchase in ((1, 2, 5000), (5, 10, 5000), (3000, 6000, 6000)):
+            with self.subTest(boards=boards):
+                line = calculate(parts, boards, {'C25804': supply}, {})[0]
+                self.assertEqual((line.required, line.purchase), (required, purchase))
+                self.assertEqual(line.total, Decimal('0.0018') * required)
+                self.assertEqual(line.total / boards, Decimal('0.0036'))
 
     def test_invalid_quantities_duplicate_references_and_ranges_rejected(self):
         for text in ('Reference,Quantity\nR1,0\n', 'Reference,Quantity\nR1,1.5\n',

@@ -38,7 +38,7 @@ def main():
         if mode['fail']:
             raise BomError('Synthetic network interruption')
         return Supply(code, mode['stock'], (PriceTier(1, 9, Decimal('0.01')),
-                                           PriceTier(10, None, Decimal('0.005'))), time.time(), library_type='Basic')
+                                           PriceTier(10, None, Decimal('0.005'))), time.time(), minimum_order=100, library_type='Basic')
 
     with TemporaryDirectory(prefix='kpm-bom-smoke-') as folder:
         root = Path(folder)
@@ -49,7 +49,8 @@ def main():
         (project / 'bom.csv').write_text('Reference,Value,Footprint,Supplier,Supplier Part Number,Alt Supplier 1,Alt Supplier Part Number 1\n'
                                         'R1,10k,0603,Digikey,ABC-ND,LCSC,C25804\n'
                                         'R2,10k,0603,LCSC,C25804,,\n'
-                                        'Q1,MOSFET,SO8,,,,\n')
+                                        'Q1,MOSFET,SO8,,,,\n'
+                                        'TP1,Test_Point,TestPoint:Pad,LCSC,C999,,\n')
         save_state(project, {'version': 1, 'boards': 1, 'source': 'bom.csv', 'overrides': {}})
         context = ProjectContext('10.0.7', 'sample', str(project), str(project / 'sample.kicad_pro'),
                                  str(project / 'sample.kicad_pcb'), True, True, False)
@@ -85,9 +86,11 @@ def main():
                 event = wx.CommandEvent(wx.EVT_BUTTON.typeId, panel.export_button.GetId())
                 panel.export_button.GetEventHandler().ProcessEvent(event)
             rows = list(csv.DictReader(target.read_text('utf-8-sig').splitlines()))
-            assert list(rows[0]) == ['Comment', 'Designator', 'Footprint', 'LCSC Part #']
+            assert list(rows[0]) == ['Comment', 'Designator', 'Footprint', 'Quantity', 'LCSC Part #']
             assert rows[0]['Designator'] == 'Q1' and rows[0]['LCSC Part #'] == ''
             assert rows[1]['Designator'] == 'R1,R2' and rows[1]['LCSC Part #'] == 'C25804'
+            assert [row['Comment'] for row in rows] == ['MOSFET', '10k']
+            assert [row['Quantity'] for row in rows] == ['1', '2']
             assert len(rows) == 2 and panel.boards.GetValue() == 5, 'Export multiplied per-board references'
             assert len(requests) == before, 'Export fetched supplier data'
             assert '1 designator(s) have no LCSC' in panel.status.GetLabel()
@@ -154,6 +157,10 @@ def main():
                     assert len(requests) == count, 'Quantity change made a network request'
                     assert panel.table.GetItemText(0, COLUMN_INDEX['unit_price']) == '0.005000'
                     assert panel.table.GetItemText(0, COLUMN_INDEX['library_type']) == 'Basic'
+                    assert panel.table.GetItemText(0, COLUMN_INDEX['required']) == '10 / 100'
+                    assert panel.table.GetItemText(0, COLUMN_INDEX['total']) == '0.0500', 'MOQ inflated required-component cost'
+                    assert 'total uses 10 required' in panel.table.GetItemText(0, COLUMN_INDEX['status'])
+                    assert 'C999' not in requests, 'Test point was priced'
                     assert panel.parts[0].code_fields == ('Alt Supplier Part Number 1', 'Supplier Part Number')
                     assert panel.export_button.IsEnabled()
                     check_export()

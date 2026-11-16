@@ -114,6 +114,7 @@ def sorted_indices(values: list[tuple], column: int, descending: bool = False) -
 
 def calculate(parts: list[BomPart], boards: int, supplies: dict[str, Supply],
               overrides: dict[str, dict]) -> list[CostLine]:
+    """Cost required components; MOQ affects the unit-price tier and availability."""
     boards = positive_integer(boards)
     lines = []
     for part in parts:
@@ -128,7 +129,7 @@ def calculate(parts: list[BomPart], boards: int, supplies: dict[str, Supply],
             price = supply.unit_price(purchase) if supply else None
             source = 'JLCPCB' if supply else ('Not fetched' if part.code else 'No part number')
         lines.append(CostLine(part, required, purchase, supply.stock if supply else None,
-                              price, price * purchase if price is not None else None, source))
+                              price, price * required if price is not None else None, source))
     return lines
 
 
@@ -190,6 +191,15 @@ def detect_lcsc(row: dict[str, str], headers: list[str]) -> tuple[str, str, tupl
     return (next(iter(codes)) if not warning else '', warning, fields)
 
 
+def _is_test_point(reference: str, value: str, footprint: str) -> bool:
+    return bool(re.match(r'TP\d', reference, re.I)
+                or normalized(value).startswith(('testpoint', 'testpad'))
+                or (':' in footprint and normalized(footprint.split(':', 1)[0]).endswith(
+                    ('testpoint', 'testpoints', 'testpad', 'testpads')))
+                or any(normalized(section).startswith(('testpoint', 'testpad'))
+                       for section in footprint.split(':')))
+
+
 def read_csv(text: str) -> list[BomPart]:
     """Accept KiCad CLI, JLCPCB, and ordinary grouped BOMs without rewriting them."""
     text = text.lstrip('\ufeff')
@@ -221,7 +231,13 @@ def read_csv(text: str) -> list[BomPart]:
         if any(get(row, name).lower() in ('1', 'true', 'yes', 'y', 'dnp', 'excluded')
                for name in ('dnp', 'donotpopulate', 'excludefrombom')):
             continue
-        refs = tuple(r.strip() for r in re.split(r'[,;\s]+', get(row, 'reference', 'references', 'refs', 'designator', 'designators')) if r.strip())
+        # A CSV containing both columns must use Value, even when it is blank.
+        value = get(row, 'value') if 'value' in names else get(row, 'comment')
+        footprint = get(row, 'footprint', 'package')
+        original_refs = tuple(r.strip() for r in re.split(r'[,;\s]+', get(row, 'reference', 'references', 'refs', 'designator', 'designators')) if r.strip())
+        refs = tuple(ref for ref in original_refs if not _is_test_point(ref, value, footprint))
+        if original_refs and not refs:
+            continue
         if not refs or any(ref in seen for ref in refs) or len(set(refs)) != len(refs):
             raise BomError(f'BOM row {number} has missing or duplicate references.')
         seen.update(refs)
@@ -229,8 +245,11 @@ def read_csv(text: str) -> list[BomPart]:
         if not raw_qty and any('-' in ref for ref in refs):
             raise BomError(f'BOM row {number} uses reference ranges; add a Quantity column.')
         quantity = positive_integer(raw_qty) if raw_qty else len(refs)
+        if len(refs) != len(original_refs) and raw_qty:
+            if quantity != len(original_refs):
+                raise BomError(f'BOM row {number} cannot exclude test points: Quantity must match the individual reference count.')
+            quantity = len(refs)
         code, warning, code_fields = detect_lcsc(row, headers)
-        value, footprint = get(row, 'value', 'comment'), get(row, 'footprint', 'package')
         manufacturer = get(row, 'manufacturer', 'manufacturername')
         mpn = get(row, 'mpn', 'manufacturerpartnumber', 'mfrpart')
         identity = '\0'.join((manufacturer, mpn, value, footprint))
@@ -246,7 +265,7 @@ def read_csv(text: str) -> list[BomPart]:
         else:
             groups[key] = BomPart(key, refs, value, footprint, code, quantity, warning, code_fields, (assembly,))
     if not groups:
-        raise BomError('No populated BOM components were found.')
+        raise BomError('No populated BOM components remain after excluding DNP parts, excluded parts and test points.')
     return list(groups.values())
 
 
@@ -273,7 +292,7 @@ def jlc_bom_csv(parts: list[BomPart]) -> str:
                 if ref.upper() in seen:
                     raise BomError(f'Duplicate assembly designator {ref}; JLCPCB treats designators as uppercase.')
                 seen.add(ref.upper())
-            value = ' '.join(row.value.split())
+            value = row.value
             footprint = row.footprint.rsplit(':', 1)[-1].strip()
             if not value or not footprint:
                 raise BomError(f'{", ".join(refs)} needs a Value/Comment and Footprint before assembly export.')
@@ -281,9 +300,9 @@ def jlc_bom_csv(parts: list[BomPart]) -> str:
             groups.setdefault(key, []).extend(refs)
     output = io.StringIO(newline='')
     writer = csv.writer(output, lineterminator='\r\n')
-    writer.writerow(('Comment', 'Designator', 'Footprint', 'LCSC Part #'))
+    writer.writerow(('Comment', 'Designator', 'Footprint', 'Quantity', 'LCSC Part #'))
     for (value, footprint, code, _), refs in sorted(groups.items(), key=lambda item: min(natural_key(ref) for ref in item[1])):
-        writer.writerow((value, ','.join(sorted(refs, key=natural_key)), footprint, code))
+        writer.writerow((value, ','.join(sorted(refs, key=natural_key)), footprint, len(refs), code))
     return output.getvalue()
 
 

@@ -145,6 +145,7 @@ class BomStockPanel(wx.Panel):
         layout.Add(self.source_label, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 14)
         totals = wx.BoxSizer(wx.HORIZONTAL)
         self.total = wx.StaticText(self, label='BOM total —')
+        self.total.SetToolTip('Cost of the components required for the selected board quantity. MOQ selects the unit-price tier; unused purchased components are excluded from this total.')
         font = self.total.GetFont()
         font.SetPointSize(font.GetPointSize() + 3)
         font.SetWeight(wx.FONTWEIGHT_BOLD)
@@ -158,7 +159,7 @@ class BomStockPanel(wx.Panel):
         self.table = wx.ListCtrl(self, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
         for _, label, width in COLUMNS:
             self.table.InsertColumn(self.table.GetColumnCount(), label, width=width)
-        self.table.SetToolTip('Click any column header to sort; click it again to reverse the order.')
+        self.table.SetToolTip('Click any column header to sort; click it again to reverse the order. USD total = USD / pc × required components. Needed / buy also shows the supplier MOQ.')
         self.table.Bind(wx.EVT_LIST_COL_CLICK, self._sort_by_column)
         self.table.Bind(wx.EVT_LIST_ITEM_SELECTED, self._selection_changed)
         self.table.Bind(wx.EVT_LIST_ITEM_DESELECTED, self._selection_changed)
@@ -176,7 +177,7 @@ class BomStockPanel(wx.Panel):
         actions.Add(self.schematic_button, 0, wx.RIGHT, 8)
         actions.AddStretchSpacer()
         self.export_button = wx.Button(self, label='Export JLCPCB BOM…')
-        self.export_button.SetToolTip('Export a per-board assembly CSV: Comment, Designator, Footprint, LCSC Part #. Save and reload the schematic first to include its latest edits.')
+        self.export_button.SetToolTip('Export a per-board assembly CSV: Comment (Value), Designator, Footprint, Quantity, LCSC Part #. Test points are excluded. Save and reload the schematic first to include its latest edits.')
         self.export_button.Bind(wx.EVT_BUTTON, self._export_bom)
         actions.Add(self.export_button)
         layout.Add(actions, 0, wx.EXPAND | wx.ALL, 14)
@@ -473,6 +474,8 @@ class BomStockPanel(wx.Panel):
             notes = [part.warning] if part.warning else []
             if line.total is None:
                 notes.append('Price unavailable')
+            if line.purchase > line.required:
+                notes.append(f'MOQ {line.purchase:,}; total uses {line.required:,} required')
             if part.code:
                 if line.stock is None:
                     notes.append('Stock unknown')

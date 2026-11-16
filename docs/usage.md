@@ -28,8 +28,12 @@ or discarding Project Setup edits. Offline errors leave local sources usable.
 
 Open **BOM & Stock** to price the saved schematic. Save schematic edits first;
 unsaved editor changes are not included. **Reload BOM** reruns KiCad's BOM export,
-excluding DNP and excluded components. LCSC detection runs separately for every
-component; no project-wide column selection is needed. Dedicated fields such as
+excluding DNP parts, excluded components and test points. `TP` references followed
+by a number and components with TestPoint/TestPad values or footprints are omitted
+from imports, costing, stock lookups and assembly export. Mixed grouped CSV rows
+retain their other components and adjust quantities accordingly.
+LCSC detection runs separately for every component; no project-wide column
+selection is needed. Dedicated fields such as
 `LCSC`, `LCSC Part #`, and `JLCPCB Part Number` are recognized, along with
 `Supplier Part Number`, `Alt Supplier Part Number 1` and ordinary `Part Number`
 or `Alt Part Number` fields containing a C-number. Supplier labels are respected:
@@ -46,17 +50,19 @@ JLCPCB/KiCad BOMs with references, quantity, value and a part-number column.
 **Use saved schematic** returns from an imported CSV to the project's schematic.
 
 **Export JLCPCB BOM…** saves a UTF-8 CSV with the columns `Comment`, `Designator`,
-`Footprint` and `LCSC Part #`, following
+`Footprint`, `Quantity` and `LCSC Part #`, following
 [JLCPCB's assembly BOM format](https://jlcpcb.com/help/article/how-to-generate-bom-and-centroid-files-from-kicad-8).
 Save and Reload BOM first to include the latest schematic changes. The export
 describes **one board** regardless of the Boards quantity: grouped designators
 are written explicitly, separated by commas, with no reference ranges. Value
-becomes Comment; the footprint's library prefix is removed. Cost grouping by
+is copied into Comment even if the source also has a different Comment or MPN.
+Quantity is the row's designator count on **one board**, without multiplying by
+Boards or MOQ. The footprint's library prefix is removed. Cost grouping by
 LCSC number never discards differing values or footprints in the assembly CSV.
 
 Parts without a code are included with a blank LCSC cell and listed after export
-for manual matching on JLCPCB. DNP and excluded parts stay out. Conflicting codes,
-missing values/footprints, duplicate designators (including case-only differences),
+for manual matching on JLCPCB. DNP parts, excluded parts and test points stay out.
+Conflicting codes, missing values/footprints, duplicate designators (including case-only differences),
 or quantities inconsistent with the explicit references must be corrected before
 export. Export does not fetch prices or change the source BOM. The assembly order
 also needs a separate component placement (CPL) file.
@@ -65,8 +71,14 @@ Change **Boards** to recalculate immediately from cached quantity price tiers.
 Identical JLCPCB numbers are aggregated before choosing a tier. All prices are
 USD, with the original supplier precision retained. **Needed / buy** shows an
 additional purchase quantity when JLCPCB supplies a minimum purchase quantity;
-the totals include those purchased components. No fabrication, assembly, shipping,
-tax, or assembly attrition fees are included. Missing prices produce an explicitly
+that purchase quantity selects the supplier's unit-price tier and is used for
+stock availability. **USD total**, **BOM total** and the per-board estimate count
+only the required components: `unit price × parts per board × Boards`. Unused
+components in a reel or MOQ do not inflate the board cost. For example, two
+resistors at USD 0.0018 each contribute USD 0.0036 per board even if the supplier
+requires buying 5,000. Manual paid prices also count only required components.
+No fabrication, assembly, shipping, tax, or assembly attrition fees are included.
+Missing prices produce an explicitly
 incomplete subtotal rather than a zero price.
 
 Click any column header to sort ascending; click it again to sort descending.

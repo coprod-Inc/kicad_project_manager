@@ -5,8 +5,10 @@ installation and the [usage guide](usage.md) for everyday operation.
 
 ## Development installation
 
+Replace `REPOSITORY_URL` with the clone URL of the checkout you want to use:
+
 ```sh
-git clone https://github.com/coprod-LLC/kicad_project_manager.git
+git clone REPOSITORY_URL kicad_project_manager
 cd kicad_project_manager
 python3 scripts/install_dev.py --kicad-major 10
 ```
@@ -137,5 +139,7 @@ parts, beyond what the JSON schema enforces. The development installer and packa
 builder validate that constraint before installation or packaging.
 Earlier package identities require uninstall/reinstall; their immutable ZIPs
 remain in GitHub Releases. The new feed retains versions of the generic identity.
-Repository URLs are derived from PCM metadata, and release workflows can override
-the repository for a fork.
+Packaging takes the repository from `GITHUB_REPOSITORY` in GitHub Actions or the
+checkout's GitHub `origin` remote locally. Pass `--repository OWNER/REPO` to the
+package/catalog builders when building from a source archive or choosing another
+release destination. The source metadata contains no fixed repository or contact URL.

@@ -1,7 +1,9 @@
 from copy import deepcopy
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -10,11 +12,46 @@ import zipfile
 from project_manager import IDENTIFIER
 from scripts.install_dev import pcm_installations
 
-from scripts.build_release import ROOT, build, source_version
+from scripts.build_release import ROOT, build, main as build_package, repository_name, source_version
 from scripts.build_catalog import main as publish_catalog, merge_packages, write_catalog
 
 
 class PackageTests(unittest.TestCase):
+    def test_release_repository_follows_ci_or_the_checkout_without_a_fixed_owner(self):
+        with TemporaryDirectory() as folder, patch.dict(os.environ, {'GITHUB_REPOSITORY': ''}):
+            root = Path(folder)
+            with self.assertRaisesRegex(ValueError, '--repository'):
+                repository_name(root)
+            subprocess.run(['git', 'init', '-q', str(root)], check=True, capture_output=True)
+            subprocess.run(['git', '-C', str(root), 'remote', 'add', 'origin',
+                            'git@github.com:example/plugin-fork.git'], check=True, capture_output=True)
+            for url in ('git@github.com:example/plugin-fork.git',
+                        'https://github.com/example/plugin-fork.git',
+                        'ssh://git@github.com/example/plugin-fork.git'):
+                subprocess.run(['git', '-C', str(root), 'remote', 'set-url', 'origin', url],
+                               check=True, capture_output=True)
+                self.assertEqual(repository_name(root), 'example/plugin-fork')
+            with patch.dict(os.environ, {'GITHUB_REPOSITORY': 'another/release-host'}), \
+                 patch('scripts.build_release.subprocess.run', side_effect=AssertionError('CI queried the checkout')):
+                self.assertEqual(repository_name(root), 'another/release-host')
+            subprocess.run(['git', '-C', str(root), 'remote', 'set-url', 'origin',
+                            'https://example.org/team/plugin'], check=True, capture_output=True)
+            with self.assertRaisesRegex(ValueError, '--repository'):
+                repository_name(root)
+
+    def test_explicit_release_destination_does_not_require_a_checkout_or_ci(self):
+        with TemporaryDirectory() as folder:
+            output = Path(folder)
+            args = ['build_release', '--tag', 'v' + source_version(), '--repository',
+                    'example/release-host', '--output', str(output)]
+            with patch('sys.argv', args), patch('builtins.print'), \
+                 patch('scripts.build_release.repository_name', side_effect=AssertionError('Explicit destination was ignored')):
+                build_package()
+            metadata = json.loads(next(output.glob('*.pcm.json')).read_text())
+            self.assertIn('/example/release-host/releases/download/', metadata['versions'][0]['download_url'])
+            self.assertEqual(metadata['author']['contact'], {})
+            self.assertEqual(metadata['resources'], {})
+
     def test_deterministic_archive_manifest_and_download_integrity(self):
         with TemporaryDirectory() as folder:
             output = Path(folder)
@@ -123,8 +160,10 @@ class PackageTests(unittest.TestCase):
             releases = root / 'releases.json'
             releases.write_text('[]')
             args = ['build_catalog', '--releases', str(releases), '--current', str(metadata_path),
+                    '--repository', 'example/project-manager',
                     '--base-url', 'https://example.org/plugins', '--output', str(root / 'site')]
             with patch('sys.argv', args), patch('scripts.build_catalog.released_packages', return_value=[previous]), \
+                 patch('scripts.build_catalog.repository_name', side_effect=AssertionError('Explicit destination was ignored')), \
                  patch('builtins.print'):
                 publish_catalog()
             packages = json.loads((root / 'site/packages.json').read_text())['packages']

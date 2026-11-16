@@ -16,6 +16,9 @@ KiCad Project Manager v1.3.0 (unreleased development)
   of cost grouping and build quantity. Keep uncoded parts for manual matching;
   refuse ambiguous codes and incomplete assembly data.
 - Include BOM regressions in native Linux and bundled macOS GUI checks.
+- Keep installation instructions and source package metadata independent of any
+  fixed organization or personal repository. Resolve the release destination
+  from CI, the checkout's origin, or an explicit packaging option.
 
 KiCad Project Manager v1.2.0
 

@@ -86,7 +86,8 @@ def write_catalog(package: dict, destination: Path, base_url: str, timestamp: in
     feed_url = html.escape(base_url.rstrip("/") + "/repository.json")
     version = html.escape(package["versions"][0]["version"])
     status = html.escape(package["versions"][0]["status"])
-    homepage = html.escape(package["resources"]["homepage"], quote=True)
+    homepage = html.escape(package.get('resources', {}).get('homepage', ''), quote=True)
+    documentation = f'<p><a href="{homepage}">Documentation and source</a></p>' if homepage else ''
     (destination / "index.html").write_text(
         '<!doctype html><html lang="en"><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -96,7 +97,7 @@ def write_catalog(package: dict, destination: Path, base_url: str, timestamp: in
         f'<p>Latest packaged version: <strong>{version}</strong> ({status}).</p>'
         '<p>In KiCad’s Plugin and Content Manager, choose Manage and add this repository URL:</p>'
         f'<p><a href="{feed_url}">{feed_url}</a></p>'
-        f'<p><a href="{homepage}">Documentation and source</a></p>'
+        f'{documentation}'
         '</body></html>\n', encoding="utf-8",
     )
 
@@ -105,13 +106,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--releases", type=Path, required=True)
     parser.add_argument("--current", type=Path, required=True)
-    parser.add_argument("--repository", default=repository_name())
+    parser.add_argument("--repository", help="GitHub OWNER/REPO; defaults to GitHub Actions or the origin remote")
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--output", type=Path, default=Path("site"))
     args = parser.parse_args()
+    repository = args.repository or repository_name()
     # Packages under a previous identity remain immutable release downloads;
     # KiCad requires reinstalling when switching to the new generic identity.
-    packages = [package for package in released_packages(json.loads(args.releases.read_text()), args.repository)
+    packages = [package for package in released_packages(json.loads(args.releases.read_text()), repository)
                 if package["identifier"] == IDENTIFIER]
     packages.append(json.loads(args.current.read_text()))
     package = merge_packages(packages)

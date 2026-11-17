@@ -24,6 +24,14 @@ local edits are kept. The plugin never resets, stashes or switches branches.
 After pulling, source comparisons and catalogs reload without reopening the plugin
 or discarding Project Setup edits. Offline errors leave local sources usable.
 
+Applying Project Setup or a template update initializes a missing `REVIEWER`
+project text variable through the connected KiCad editor. Existing reviewer
+values are preserved. This also repairs projects whose worksheets were upgraded
+before the variable was created. KiCad saves the variable in its project settings;
+the plugin does not overwrite an open project's `.kicad_pro` file from disk.
+If the editor API cannot initialize it, Activity explains how to add `REVIEWER`
+(an empty value is valid) in KiCad's project Text Variables and save the project.
+
 ## BOM and stock
 
 Open **BOM & Stock** to price the saved schematic. Save schematic edits first;

@@ -72,7 +72,18 @@ def main() -> int:
         return sample
 
     app = wx.App(False)
-    frame = ProjectManagerFrame(provider, storage=base / 'settings')
+    initialized_variables = []
+    live_variables = {}
+
+    def initialize_variables(context, defaults):
+        initialized_variables.append((context.project_file, dict(defaults)))
+        current = live_variables.setdefault(context.project_file, {})
+        missing = {key: value for key, value in defaults.items() if key not in current}
+        current.update(missing)
+        return tuple(missing)
+
+    frame = ProjectManagerFrame(provider, storage=base / 'settings',
+                                variable_initializer=initialize_variables)
     frame.Show()
     if args.startup_only:
         wx.CallLater(500, frame.Close)
@@ -553,6 +564,7 @@ def main() -> int:
 
     def review_template():
         print('GUI: cancelling template review', flush=True)
+        initialized_before = len(initialized_variables)
         # Cancel first; then add missing files through the only template review path.
         def cancel_review():
             dialogs = [w for w in wx.GetTopLevelWindows() if isinstance(w, TemplateReviewDialog) and w.IsModal()]
@@ -560,6 +572,7 @@ def main() -> int:
             dialogs[0].EndModal(wx.ID_CANCEL)
         wx.CallLater(150, cancel_review)
         frame._review_template(None)
+        assert len(initialized_variables) == initialized_before, 'Cancelled review initialized variables'
         assert not (project / STATE).exists()
         assert read_setup(project).workflow is None
 
@@ -590,6 +603,8 @@ def main() -> int:
         wx.CallLater(150, accept_review)
         print('GUI: applying template review directly, then closing it', flush=True)
         frame._review_template(None)
+        assert len(initialized_variables) == initialized_before + 1
+        assert 'REVIEWER' in live_variables[sample.project_file]
 
     def check_review_selection():
         print('GUI: checking filtered range selection, partial apply and deferred drafts', flush=True)
@@ -1115,10 +1130,19 @@ def main() -> int:
                 frame.SetSize((980, 840))
                 frame.refresh(discard=True)
                 phase = 12
-            else:
+            elif phase == 12:
                 assert frame.template_comparison.colour == 'green'
                 assert_template_layout()
                 capture(frame, args.output)
+                # A project upgraded before this repair must be fixed even
+                # when the installed shared template files already match.
+                live_variables[sample.project_file].pop('REVIEWER', None)
+                initialized_before = len(initialized_variables)
+                frame._update_template_files(None)
+                assert len(initialized_variables) == initialized_before + 1
+                assert 'REVIEWER' in live_variables[sample.project_file]
+                phase = 13
+            else:
                 frame.Close()
                 return
             wx.CallLater(150, check)

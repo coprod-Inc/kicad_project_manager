@@ -13,6 +13,58 @@ class ContextError(RuntimeError):
     """An actionable connection or project-selection problem."""
 
 
+def initialize_project_variables(context: ProjectContext, defaults: Mapping[str, str],
+                                 socket_path: str | None = None, *,
+                                 environ: Mapping[str, str] | None = None,
+                                 client_factory: Callable[..., Any] | None = None) -> tuple[str, ...]:
+    """Seed missing values through the live editor so later saves retain them."""
+    if not context.project_saved or not context.project_file:
+        raise ContextError('Save the KiCad project before initializing its text variables.')
+    if any(not isinstance(key, str) or not key or not isinstance(value, str)
+           for key, value in defaults.items()):
+        raise ContextError('Project text-variable defaults must be names and text values.')
+    env = os.environ if environ is None else environ
+    endpoint = socket_path or env.get('KICAD_API_SOCKET')
+    if not endpoint:
+        raise ContextError('Launch Project Manager from PCB Editor to initialize project text variables.')
+    if not endpoint.startswith('ipc://'):
+        endpoint = 'ipc://' + endpoint
+    try:
+        if client_factory is None:
+            from kipy import KiCad
+            client_factory = KiCad
+        from kipy.proto.common.types import DocumentType, MapMergeMode
+        from kipy.proto.common.types import project_settings_pb2
+        from kipy.project_types import TextVariables
+        client = client_factory(socket_path=endpoint, kicad_token=env.get('KICAD_API_TOKEN', ''),
+                                client_name='kicad-project-manager', timeout_ms=2500)
+
+        def matching_document():
+            documents = client.get_open_documents(DocumentType.DOCTYPE_PCB)
+            if len(documents) != 1:
+                raise ContextError('The active KiCad project changed. Refresh before initializing text variables.')
+            current = context_from_document(documents[0], context.kicad_version)
+            if (current.project_file, current.board_file) != (context.project_file, context.board_file):
+                raise ContextError('The active KiCad project changed. Refresh before initializing text variables.')
+            return documents[0]
+
+        project = client.get_project(matching_document())
+        existing = project.get_text_variables()
+        missing = {key: value for key, value in defaults.items() if key not in existing}
+        if missing:
+            matching_document()
+            variables = TextVariables(project_settings_pb2.TextVariables())
+            variables.variables = missing
+            project.set_text_variables(variables, merge_mode=MapMergeMode.MMM_MERGE)
+        return tuple(missing)
+    except ContextError:
+        raise
+    except Exception as exc:
+        raise ContextError('Could not initialize project text variables through KiCad. '
+                           'Add the missing REVIEWER variable under Project Properties → Text Variables, '
+                           'then save the project. Existing values were not replaced.') from exc
+
+
 @dataclass(frozen=True)
 class ProjectContext:
     kicad_version: str

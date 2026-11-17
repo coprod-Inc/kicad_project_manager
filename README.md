@@ -16,7 +16,7 @@ rules and PCB stackups. Use your own compatible templates and standards folders.
 
 For automatic updates, add the `repository.json` URL shown on the maintainer's
 published download page in **Plugin and Content Manager → Manage…**.
-Version **1.3.2** is the current stable release for KiCad 9 and 10. When upgrading from a
+Version **1.3.3** is the current stable release for KiCad 9 and 10. When upgrading from a
 previous package identity, uninstall that copy first; the package ID is
 `org.kicadprojectmanager.plugin`. Unlink source installations before installing
 the PCM package. For manual clone/symlink setup, see [development installation](docs/development.md#development-installation).

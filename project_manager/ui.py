@@ -46,9 +46,11 @@ def _wrap_text(control: wx.StaticText, value: str, width: int) -> str:
 
 
 class ProjectManagerFrame(wx.Frame):
-    def __init__(self, provider: Callable[[], ProjectContext], storage: Path | None = None):
+    def __init__(self, provider: Callable[[], ProjectContext], storage: Path | None = None,
+                 variable_initializer=None):
         super().__init__(None, title=f"{NAME} — {__version__}", size=(1100, 940))
         self._provider = provider
+        self._variable_initializer = variable_initializer
         self.storage = storage
         self._closing = False
         self._busy = False
@@ -498,6 +500,7 @@ class ProjectManagerFrame(wx.Frame):
         def apply_review(plan):
             nonlocal applied
             backup = apply_upgrade(plan, self.storage, self._verify_project)
+            self._initialize_project_variables()
             applied = True
             self._append_log(f'Template review applied. Backup: {backup}' if backup else 'Template files already match.')
             return backup
@@ -523,6 +526,7 @@ class ProjectManagerFrame(wx.Frame):
             comparison = compare(self.template_comparison.root, load_template(self.template_source))
             plan = prepare_upgrade(comparison, template_file_choices(comparison))
             backup = apply_upgrade(plan, self.storage, self._verify_project)
+            self._initialize_project_variables()
             self._append_log(f'Template files updated; project documents kept. Backup: {backup}' if backup
                              else 'Template files already match; project documents kept.')
             self.refresh(discard=True)
@@ -530,8 +534,20 @@ class ProjectManagerFrame(wx.Frame):
             wx.MessageBox(str(exc), 'Update template files', wx.OK | wx.ICON_ERROR, self)
 
     def _on_applied(self, backup: Path | None):
+        self._initialize_project_variables()
         self._append_log(f'Project setup saved. Backup: {backup}' if backup else 'No changes were needed.')
         self.refresh(discard=True)
+
+    def _initialize_project_variables(self):
+        if self._variable_initializer is None or self._context is None:
+            return
+        try:
+            snapshot = read_setup(Path(self._context.project_file).parent)
+            added = self._variable_initializer(self._context, {'REVIEWER': snapshot.metadata.get('REVIEWER', '')})
+            if added:
+                self._append_log('Initialized missing KiCad project text variables: ' + ', '.join(added) + '.')
+        except (ContextError, SetupError, OSError) as exc:
+            self._append_log('Project text variables need attention: ' + str(exc))
 
     def _verify_project(self):
         try:

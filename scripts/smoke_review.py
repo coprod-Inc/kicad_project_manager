@@ -48,7 +48,15 @@ def main():
         context = ProjectContext('10.0.7', 'sample', str(project), str(project / 'sample.kicad_pro'),
                                  str(project / 'sample.kicad_pcb'), True, True, True)
         app = wx.App(False)
-        frame = ProjectManagerFrame(lambda: context, root / 'settings')
+        initialized_variables = []
+
+        def initialize_variables(active, defaults):
+            assert active == context
+            initialized_variables.append(dict(defaults))
+            return tuple(defaults)
+
+        frame = ProjectManagerFrame(lambda: context, root / 'settings',
+                                    variable_initializer=initialize_variables)
         frame.SetSize((1120, 980))
         frame.Show()
         phase = 0
@@ -169,6 +177,7 @@ def main():
                     capture(frame, args.output / 'release-preparation-small.png')
                     frame.setup_panel.apply_plan(frame.setup_panel.make_plan())
                 elif phase == 3:
+                    assert initialized_variables == [{'REVIEWER': values['REVIEWER']}]
                     check_selection_persistence_and_no_op_apply()
                     assert not frame.setup_panel.dirty
                     assert frame.setup_panel.release_panel.version.GetValue() == '1.0.0'

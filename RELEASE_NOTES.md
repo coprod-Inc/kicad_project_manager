@@ -1,3 +1,10 @@
+KiCad Project Manager v1.3.3
+
+- Initialize a missing REVIEWER project text variable after Project Setup or
+  template updates, including updates whose shared files already match. Use
+  KiCad's live project API and preserve existing values so later saves retain
+  the default and native DRC can resolve the upgraded worksheet.
+
 KiCad Project Manager v1.3.2
 
 - Keep the Exclude JLC checkbox column visible on macOS by giving the trailing

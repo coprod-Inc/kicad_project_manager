@@ -7,7 +7,7 @@ import json
 import sys
 
 from project_manager import NAME, __version__
-from project_manager.context import ContextError, detect_context
+from project_manager.context import ContextError, detect_context, initialize_project_variables
 
 
 def main() -> int:
@@ -48,7 +48,8 @@ def main() -> int:
     from project_manager.instance import ensure_single_instance
     if not ensure_single_instance(app):
         return 0
-    frame = ProjectManagerFrame(provider)
+    frame = ProjectManagerFrame(provider, variable_initializer=lambda context, defaults:
+                                initialize_project_variables(context, defaults, args.socket))
     frame.Show()
     app.MainLoop()
     return 0

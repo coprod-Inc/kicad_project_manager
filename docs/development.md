@@ -59,7 +59,7 @@ session token automatically. Diagnostics contain local paths.
 ```sh
 python -m pip install -r requirements.txt -r requirements-dev.txt
 python -m unittest discover -s tests -v
-python -m scripts.build_release --tag v1.3.1
+python -m scripts.build_release --tag v1.3.2
 python -m scripts.validate_package --schemas /usr/share/kicad/schemas
 python -m scripts.smoke_gui --output .dev/gui.png
 python -m scripts.smoke_review --output .dev/review
@@ -85,6 +85,9 @@ The BOM smoke uses a synthetic CSV and mocked supplier data; it requires native
 wxPython but no network, KiCad CLI, or supplier account. Live provider checks can
 be run separately against a few known components. The BOM runtime uses only the
 standard library and KiCad's CLI; it adds no plugin environment dependencies.
+The native BOM check also verifies that Exclude JLC retains its minimum width
+and a nonempty cell rectangle after layout, resizing and BOM reloads, including
+on Cocoa where the trailing column can otherwise collapse.
 
 `project_manager/` contains runtime code; `tests/` contains regression fixtures
 and checks. `scripts/` provides installation, manifest creation, GUI/integration

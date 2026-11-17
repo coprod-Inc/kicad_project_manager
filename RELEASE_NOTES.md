@@ -1,3 +1,11 @@
+KiCad Project Manager v1.3.2
+
+- Keep the Exclude JLC checkbox column visible on macOS by giving the trailing
+  native table column a nonzero minimum width during creation.
+- Add a native GUI regression that checks the realized checkbox-column width
+  and cell rectangle after layout, resizing and BOM reloads. The existing macOS
+  and Linux BOM checks run it without additional dependencies.
+
 KiCad Project Manager v1.3.1
 
 - Show unavailable impedance-profile guidance in orange, clarify how to match a

@@ -192,8 +192,12 @@ class BomStockPanel(wx.Panel):
         self.table.AssociateModel(self.table_model)
         for column, (key, label, width) in enumerate(COLUMNS):
             if key == 'exclude_jlc':
-                self.table.AppendToggleColumn(label, column, mode=dv.DATAVIEW_CELL_ACTIVATABLE,
-                                              width=width, align=wx.ALIGN_CENTER)
+                toggle = self.table.AppendToggleColumn(label, column, mode=dv.DATAVIEW_CELL_ACTIVATABLE,
+                                                      width=width, align=wx.ALIGN_CENTER)
+                # Cocoa auto-sizes the trailing column while the control is
+                # laid out. Without a minimum it can collapse to zero pixels.
+                toggle.SetMinWidth(width)
+                toggle.SetWidth(width)
             else:
                 self.table.AppendTextColumn(label, column, width=width)
         self.table.SetToolTip('Tick Exclude JLC to omit that item from the JLCPCB assembly export. Click any column header to sort; click it again to reverse the order. USD total = USD / pc × required components. Needed / buy also shows the supplier MOQ.')

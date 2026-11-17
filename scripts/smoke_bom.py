@@ -121,6 +121,22 @@ def main():
         def row_excluded(row):
             return cell(row, COLUMN_INDEX['exclude_jlc'])
 
+        def check_exclusion_column_width():
+            # Model-only edits and synthesized events do not exercise Cocoa's
+            # native last-column sizing. Inspect the realized column after the
+            # window has been shown, laid out, resized or its model reset.
+            column = panel.table.GetColumn(COLUMN_INDEX['exclude_jlc'])
+            assert not column.IsHidden(), 'Exclude JLC column is hidden'
+            assert column.GetWidth() >= 105, (
+                f'Exclude JLC column collapsed to {column.GetWidth()} px on {wx.Platform}')
+            if wx.Platform == '__WXMAC__':
+                # Cocoa exposes the cell bounds even when horizontally offscreen;
+                # other ports can return an empty rect until scrolled into view.
+                item = panel.table_model.GetItem(0)
+                rect = panel.table.GetItemRect(item, column)
+                assert rect.width > 0 and rect.height > 0, (
+                    f'Exclude JLC has an empty native cell rectangle on {wx.Platform}: {rect}')
+
         def select_row(row):
             panel.table.Select(panel.table_model.GetItem(row))
 
@@ -226,6 +242,7 @@ def main():
                     if 'C25804' not in panel.supplies:
                         wx.CallLater(80, check)
                         return
+                    check_exclusion_column_width()
                     assert 'incomplete' in panel.status.GetLabel()
                     assert 'partial' in panel.per_board.GetLabel()
                     count = len(requests)
@@ -285,6 +302,7 @@ def main():
                     panel.reload_bom()
                     phase = 11
                 elif phase == 11:
+                    check_exclusion_column_width()
                     assert row_excluded(row_for(panel.parts[1])), 'BOM reload lost the exclusion'
                     assert not row_excluded(row_for(panel.parts[0]))
                     check_export(('R1,R2',))
@@ -296,6 +314,7 @@ def main():
                     panel.table.EnsureVisible(panel.table_model.GetItem(0), panel.table.GetColumn(COLUMN_INDEX['exclude_jlc']))
                     phase = 121
                 elif phase == 121:
+                    check_exclusion_column_width()
                     if wx.Platform == '__WXGTK__':
                         click_native_header()
                         phase = 13
@@ -332,6 +351,7 @@ def main():
                     frame.SetSize((860, 640))
                     phase = 21
                 elif phase == 21:
+                    check_exclusion_column_width()
                     assert panel.auto.GetScreenRect().right <= panel.GetScreenRect().right
                     assert panel.details.GetScreenRect().bottom <= panel.GetScreenRect().bottom
                     assert panel.table.GetSize().height > 100

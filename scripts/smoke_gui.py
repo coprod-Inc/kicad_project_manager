@@ -745,7 +745,9 @@ def main() -> int:
     def check():
         nonlocal phase, before, small_status_height, logged_phase
         try:
-            if time.monotonic() - started > 30:
+            # This is the budget for the complete multi-dialog scenario,
+            # not one refresh. Hosted Intel Macs can need over 30 seconds.
+            if time.monotonic() - started > 90:
                 raise AssertionError("GUI refresh timed out")
             if frame._busy or frame._overview_layout_pending or not calls:
                 wx.CallLater(100, check)
@@ -1132,7 +1134,7 @@ def main() -> int:
     wx.CallLater(250, check)
     # The phase timeout cannot fire while a failed callback leaves a modal dialog
     # open. Bound the entire event loop and print thread stacks on a stuck test.
-    faulthandler.dump_traceback_later(45, exit=True)
+    faulthandler.dump_traceback_later(120, exit=True)
     with patch('project_manager.ui._wrap_text', side_effect=measured_wrap):
         app.MainLoop()
     faulthandler.cancel_dump_traceback_later()

@@ -5,6 +5,8 @@ KiCad Project Manager v1.3.2
 - Add a native GUI regression that checks the realized checkbox-column width
   and cell rectangle after layout, resizing and BOM reloads. The existing macOS
   and Linux BOM checks run it without additional dependencies.
+- Give the complete native GUI smoke scenario an adequate bounded deadline on
+  slower hosted Intel Macs, retaining all interaction and layout assertions.
 
 KiCad Project Manager v1.3.1
 

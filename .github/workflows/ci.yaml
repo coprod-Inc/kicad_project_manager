@@ -11,7 +11,8 @@ permissions:
 jobs:
   mac_bundle:
     name: Official KiCad 10.0.7 Mac Python
-    runs-on: macos-latest
+    # Avoid the ARM runner capacity failures that cancel queued native Mac checks.
+    runs-on: macos-15-intel
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -57,7 +58,7 @@ jobs:
       fail-fast: false
       matrix:
         # Python 3.9 has no build for the Ubuntu 26.04 latest runner.
-        os: [ubuntu-24.04, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-15-intel, windows-latest]
         python: ['3.9', '3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@v4

@@ -1,3 +1,14 @@
+KiCad Project Manager v1.3.1
+
+- Show unavailable impedance-profile guidance in orange, clarify how to match a
+  saved stackup, and rename the import button to Add impedance profile.
+- Remove the redundant Text view for standard impedance tables. Other document
+  formats retain the ordinary editor.
+- Read escaped quotes throughout BOM CSV files, including fields beyond the
+  dialect sample, so later inch dimensions do not block all component imports.
+- Import optional impedance tolerance percentages from stackup profiles, display
+  them in stackup details, and retain them when editing or saving guidance.
+
 KiCad Project Manager v1.3.0
 
 - Add an Exclude JLC checkbox as the last BOM & Stock column. Save ticks per

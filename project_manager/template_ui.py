@@ -102,9 +102,8 @@ class TemplateReviewDialog(wx.Dialog):
         right_layout.Add(self.path_label, 0, wx.EXPAND | wx.BOTTOM, 8)
         toolbar = wx.BoxSizer(wx.HORIZONTAL)
         self.edit_button = wx.ToggleButton(right, label='Edit')
-        self.source_button = wx.ToggleButton(right, label='Text')
         self.changes_button = wx.ToggleButton(right, label='Changes')
-        for button, view in ((self.edit_button, 0), (self.source_button, 2), (self.changes_button, 1)):
+        for button, view in ((self.edit_button, 0), (self.changes_button, 1)):
             button.Bind(wx.EVT_TOGGLEBUTTON, lambda event, value=view: self._show_view(value))
             toolbar.Add(button, 0, wx.RIGHT, 6)
         toolbar.AddStretchSpacer()
@@ -304,7 +303,6 @@ class TemplateReviewDialog(wx.Dialog):
         self.editor.ChangeValue('')
         self.editor.Disable()
         self.edit_button.Hide()
-        self.source_button.Hide()
         self.diff_mode.Disable()
         self.changes_button.SetValue(True)
         self.views.SetSelection(1)
@@ -348,7 +346,6 @@ class TemplateReviewDialog(wx.Dialog):
             except SetupError:
                 pass  # Other document formats keep the ordinary text editor.
         self.edit_button.SetLabel('Table' if self._table_available else 'Edit')
-        self.source_button.Show(self._table_available)
         self._toggle_shared_rules(None)
         self._show_view(self._document_view if item.editable else 1, remember=False)
         self.Layout()
@@ -359,10 +356,7 @@ class TemplateReviewDialog(wx.Dialog):
         if editable and remember:
             self._document_view = view
         view = view if editable else 1
-        if view == 2 and not self._table_available:
-            view = 0
         self.edit_button.SetValue(view == 0)
-        self.source_button.SetValue(view == 2)
         self.changes_button.SetValue(view == 1)
         if view == 0 and self._table_available:
             try:
@@ -370,10 +364,10 @@ class TemplateReviewDialog(wx.Dialog):
                 self.impedance_panel.load(ImpedanceTable.parse(item.editor_text(self.edits.get(item.path))))
             except SetupError as exc:
                 wx.MessageBox(str(exc), 'Impedance table format', wx.OK | wx.ICON_ERROR, self)
-                view = 2
-                self.edit_button.SetValue(False)
-                self.source_button.SetValue(True)
-        self.views.SetSelection(2 if view == 0 and self._table_available else 0 if view == 2 else view)
+                self._table_available = False
+                self._table_path = None
+                self.edit_button.SetLabel('Edit')
+        self.views.SetSelection(2 if view == 0 and self._table_available else view)
         self.views.GetCurrentPage().Layout()
         if self.selected >= 0:
             item = self.comparison.items[self.selected]
@@ -387,7 +381,7 @@ class TemplateReviewDialog(wx.Dialog):
             elif item.path == README_SOURCE:
                 note = 'Edit the README source. CI regenerates README.md on its next run.'
             elif self._table_available:
-                note = 'Edit cells in Table, or use Text for the CSV source. Apply saves the document.'
+                note = 'Edit cells in Table. Apply saves the document.'
             else:
                 note = 'Edit this project document. Apply saves it as an accepted customization.'
             self._set_context(note)

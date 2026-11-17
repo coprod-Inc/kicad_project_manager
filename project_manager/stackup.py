@@ -254,6 +254,9 @@ def validate_metadata(entry: dict) -> None:
                 raise StandardsError('Each impedance target needs a differential or single_ended mode.')
             for key in ('impedance_ohms', 'track_width_mm'):
                 _number(target.get(key), key)
+            if 'tolerance_percent' in target:
+                if _number(target['tolerance_percent'], 'Impedance tolerance (%)') > 100:
+                    raise StandardsError('Impedance tolerance (%) must be at most 100.')
             if target['mode'] == 'differential':
                 _number(target.get('pair_gap_mm'), 'Differential pair gap')
             for key in ('geometry', 'layer', 'reference_layer', 'notes'):

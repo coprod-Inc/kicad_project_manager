@@ -354,7 +354,9 @@ class StandardsPanel(wx.ScrolledWindow):
             targets = data.get('impedance_targets', [])
             if targets:
                 t = targets[0]
-                text += (f'\n{t["impedance_ohms"]:g} Ω {t["mode"].replace("_", " ")} · {t.get("geometry", "")} · '
+                text += (f'\n{t["impedance_ohms"]:g} Ω'
+                         + (f' ±{t["tolerance_percent"]:g}%' if 'tolerance_percent' in t else '')
+                         + f' {t["mode"].replace("_", " ")} · {t.get("geometry", "")} · '
                          f'{t.get("layer", "unspecified layer")} → {t.get("reference_layer", "unspecified reference")} · '
                          f'width {t["track_width_mm"]:g} mm' + (f' / gap {t["pair_gap_mm"]:g} mm' if t.get('pair_gap_mm') else ''))
         self.details.ChangeValue(text)

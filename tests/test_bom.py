@@ -22,6 +22,20 @@ def response(code='C25804'):
 
 
 class BomTests(unittest.TestCase):
+    def test_escaped_quotes_after_dialect_sample_do_not_create_extra_columns(self):
+        for delimiter in (',', ';', '\t'):
+            with self.subTest(delimiter=delimiter):
+                output = io.StringIO(newline='')
+                writer = csv.writer(output, delimiter=delimiter, quoting=csv.QUOTE_ALL)
+                writer.writerow(('Reference', 'Value', 'Description', 'LCSC'))
+                for number in range(1, 121):
+                    writer.writerow((f'R{number}', '10k', 'Resistor ' + 'x' * 64, 'C25804'))
+                self.assertGreater(output.tell(), 8192)
+                writer.writerow(('U1', 'Isolator', '16-SSOP (0.154", 3.90mm Width)', 'C123'))
+                parts = read_csv(output.getvalue())
+                self.assertEqual([(part.code, part.quantity) for part in parts], [('C25804', 120), ('C123', 1)])
+                self.assertEqual(parts[1].references, ('U1',))
+
     def test_mixed_supplier_fields_prefer_primary_over_substitute_per_component(self):
         parts = read_csv('Reference,Value,Footprint,Supplier,Supplier Part Number,Alt Supplier 1,Alt Supplier Part Number 1\n'
                          'C1,100n,0603,Digikey,ABC-ND,LCSC,C111\n'

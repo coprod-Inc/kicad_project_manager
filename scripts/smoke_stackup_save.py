@@ -107,7 +107,8 @@ def main():
                     if not guide:
                         wx.CallLater(100, check)
                         return
-                    for key, value in {'impedance_ohms': '100', 'track_width_mm': '0.2', 'pair_gap_mm': '0.15'}.items():
+                    for key, value in {'impedance_ohms': '100', 'track_width_mm': '0.2', 'pair_gap_mm': '0.15',
+                                       'tolerance_percent': '10'}.items():
                         guide.fields[key].ChangeValue(value)
                     phase = 21
                 elif phase == 21:
@@ -156,6 +157,7 @@ def main():
                     assert 'status' not in document
                     assert document['manufacturer_recommended'] is False
                     assert document['impedance_targets'][0]['pair_gap_mm'] == 0.15
+                    assert document['impedance_targets'][0]['tolerance_percent'] == 10
                     assert 'No' in panel.details.GetValue() or 'alternative' in panel.details.GetValue()
                     assert not panel.capture_button.IsShown()
                     capture(frame, args.output / 'matched-stackup.png')

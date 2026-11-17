@@ -20,6 +20,7 @@ if sys.platform == "linux" and os.environ.get("DISPLAY"):
 import wx
 
 from project_manager.impedance_table import HEADERS, ImpedanceTable
+from project_manager.impedance_ui import WARNING_COLOUR, EDIT_HINT
 from project_manager.context import ContextError, ProjectContext
 from project_manager.ui import FOUND_COLOUR, MISSING_COLOUR, ProjectManagerFrame, _wrap_text
 from project_manager.setup import read_setup
@@ -353,7 +354,7 @@ def main() -> int:
             frame.template_source, frame.template_comparison = previous
 
     def check_impedance_editor():
-        print('GUI: checking impedance cells, non-destructive imports, raw text and save', flush=True)
+        print('GUI: checking impedance cells, profile guidance, non-destructive imports and save', flush=True)
         source = template_folder(base / 'impedance-template')
         path = 'kibot_resources/templates/impedance_table.txt'
         (source.root / path).write_text(',\t\t'.join(HEADERS) + '\n')
@@ -363,7 +364,8 @@ def main() -> int:
         standards = catalog_folder(base / 'impedance-standards')
         _, board = saved_board(base / 'impedance-board')
         target = {'mode': 'differential', 'impedance_ohms': 100, 'geometry': 'microstrip',
-                  'track_width_mm': 0.2146, 'pair_gap_mm': 0.2032, 'layer': 'F.Cu', 'reference_layer': 'B.Cu'}
+                  'track_width_mm': 0.2146, 'pair_gap_mm': 0.2032, 'layer': 'F.Cu', 'reference_layer': 'B.Cu',
+                  'tolerance_percent': 10}
         write_stackup(standards / 'stackups/two_layer.json', 'two_layer', 'Matching board', STACKUP,
                       impedance_targets=[target])
         with TemplateReviewDialog(frame, compare(root, source),
@@ -373,7 +375,9 @@ def main() -> int:
                 try:
                     dialog.select_path(path)
                     assert dialog.views.GetSelection() == 2
-                    assert dialog.source_button.IsShown() and dialog.edit_button.GetLabel() == 'Table'
+                    assert dialog.edit_button.GetLabel() == 'Table'
+                    assert not any(isinstance(w, wx.ToggleButton) and w.GetLabel() == 'Text'
+                                   for w in dialog._right.GetChildren())
                     panel = dialog.impedance_panel
                     cell_controls = []
                     def editor_created(event):
@@ -381,6 +385,8 @@ def main() -> int:
                         event.Skip()
                     panel.grid.Bind(wx.grid.EVT_GRID_EDITOR_CREATED, editor_created)
                     assert panel.import_button.IsEnabled() and len(panel.presets) == 1
+                    assert panel.import_button.GetLabel() == 'Add impedance profile'
+                    assert panel.preset_choice.IsEnabled()
                     panel._add(None)
                     manual = ('Manual single-ended', '50', '±5 %', 'L1', '0.3', '', 'L2')
                     for col, value in enumerate(manual):
@@ -388,15 +394,13 @@ def main() -> int:
                     panel._changed(None)
                     panel._import(None)
                     assert panel.grid.GetNumberRows() == 2
+                    assert panel.grid.GetCellValue(1, 2) == '±10 %'
                     assert ImpedanceTable.parse(dialog.edits[path].decode()).rows[0] == manual
                     panel._import(None)
                     assert panel.grid.GetNumberRows() == 2
                     dialog.select_path(README_SOURCE)
                     dialog.select_path(path)
                     assert panel.grid.GetCellValue(0, 0) == 'Manual single-ended'
-                    dialog._show_view(2)
-                    assert '\t' not in dialog.editor.GetValue()
-                    dialog._show_view(0)
                     # Make a real in-progress grid edit, then change files.
                     panel.grid.SetGridCursor(0, 4)
                     panel.grid.EnableCellEditControl()
@@ -420,6 +424,20 @@ def main() -> int:
                     capture(dialog, args.output.with_name('template-impedance-table.png'))
                     # A row deletion is staged and can be viewed as a colored plan.
                     panel = dialog.impedance_panel
+                    saved = board.read_text()
+                    board.write_text(saved.replace('0.035', '0.05'))
+                    panel.refresh_guides()
+                    assert not panel.import_button.IsEnabled() and not panel.preset_choice.IsEnabled()
+                    assert panel.status.GetForegroundColour() == WARNING_COLOUR
+                    assert 'No impedance profile matches' in panel.status.GetLabel()
+                    wx.YieldIfNeeded()
+                    assert panel.status.GetSize().height >= panel.status.GetBestSize().height
+                    capture(dialog, args.output.with_name('template-impedance-unmatched.png'))
+                    board.write_text(saved)
+                    panel.refresh_guides()
+                    assert panel.import_button.IsEnabled() and panel.preset_choice.IsEnabled()
+                    assert panel.status.GetForegroundColour() != WARNING_COLOUR
+                    assert panel.status.GetLabel() == EDIT_HINT
                     panel.grid.SetGridCursor(1, 0)
                     panel._delete(None)
                     assert panel.grid.GetNumberRows() == 1

@@ -80,7 +80,9 @@ each project and are preserved on apply.
   arrays of single-line strings).
 - `impedance_targets`: an array with `mode` (`single_ended` or `differential`),
   positive `impedance_ohms`, positive `track_width_mm`, and positive `pair_gap_mm`
-  for differential pairs. Optional `geometry`, `layer`, `reference_layer` and
+  for differential pairs. Optional `tolerance_percent` is a positive percentage
+  at most 100, imported as a symmetric ± tolerance (for example, `10` means ±10%).
+  Optional `geometry`, `layer`, `reference_layer` and
   `notes` describe the guide. Guidance does not assign nets or change widths.
 
 ## Validation and provenance

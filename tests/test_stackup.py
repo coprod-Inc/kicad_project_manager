@@ -6,13 +6,26 @@ from tempfile import TemporaryDirectory
 import unittest
 from project_manager.stackup import (appearance_override, matching_stackups, parse_stackup, physical_summary,
                                     read_board_stackup, stackup_identity, layer_changes)
-from project_manager.standards import StandardsError, load_catalog
+from project_manager.standards import StandardsError, load_catalog, preset_details
+from project_manager.stackup import validate_metadata
 from project_manager.standards_apply import apply_standards, plan_standards
 from project_manager.sexpr import atoms, forms
 from tests.standards_fixtures import detailed_catalog, saved_board
 
 
 class StackupTests(unittest.TestCase):
+    def test_impedance_tolerance_must_be_a_valid_percentage(self):
+        target = {'mode': 'single_ended', 'impedance_ohms': 50, 'track_width_mm': 0.2}
+        for tolerance in (0, -1, 101, True, '10', None, float('inf'), float('nan')):
+            with self.subTest(tolerance=tolerance), self.assertRaises(StandardsError):
+                validate_metadata({'impedance_targets': [{**target, 'tolerance_percent': tolerance}]})
+        validate_metadata({'impedance_targets': [target, {**target, 'tolerance_percent': 10}]})
+
+    def test_stackup_details_show_impedance_tolerance(self):
+        self.preset.details['impedance_targets'] = [{'mode': 'single_ended', 'impedance_ohms': 50,
+                                                   'track_width_mm': 0.2, 'tolerance_percent': 10}]
+        self.assertIn('Ω ±10%', preset_details(self.preset))
+
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

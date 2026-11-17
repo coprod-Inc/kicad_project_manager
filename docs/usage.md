@@ -223,18 +223,20 @@ they no longer occupy a separate tab. Kept shared-file differences remain visibl
 
 The standard seven-column impedance document opens in **Table**. Edit cells and
 use **Add row** / **Delete selected rows**; padding and tabs are unnecessary.
-**Text** exposes its comma-separated source. Other headings or malformed CSV keep
-the ordinary text editor, so different templates remain usable. Applying saves
-the same text document, with CSV quoting and ordinary newlines.
+Other headings or malformed CSV keep the ordinary text editor, so different
+templates remain usable. Applying saves the same text document, with CSV quoting
+and ordinary newlines.
 
-If a standards folder is linked, **Add missing profiles** offers only presets
+If a standards folder is linked, **Add impedance profile** offers only presets
 whose copper/dielectric construction matches the saved PCB. Save board changes
 before importing. Import rereads the standards and board, appends missing targets
 and preserves existing rows, including manual 50 Ω entries and tolerances. If
 an existing target on the same signal/reference layers has a different width or
 gap, it stays unchanged and the conflict is reported. Equivalent numeric/layer
 spellings do not create duplicate rows. Missing source layers are reported;
-missing impedance tolerances remain blank. Guidance does not calculate impedances
+source tolerance percentages are imported and missing tolerances remain blank.
+When no profile matches, an orange message explains how to select a matching
+stackup or add rows manually. Guidance does not calculate impedances
 or modify routing, netclasses, the PCB, or the standards repository.
 
 Put reusable new targets in that preset's `impedance_targets` in the standards

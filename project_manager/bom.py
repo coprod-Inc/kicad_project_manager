@@ -208,7 +208,9 @@ def read_csv(text: str) -> list[BomPart]:
         dialect = csv.Sniffer().sniff(text[:8192], delimiters=',;\t')
     except csv.Error:
         dialect = csv.excel
-    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+    # Sniffer may set doublequote=False when its sample contains no escaped
+    # quotes. Later KiCad fields (e.g. inch dimensions) still use CSV's "" escape.
+    reader = csv.DictReader(io.StringIO(text), dialect=dialect, doublequote=True)
     headers = reader.fieldnames or []
     if len(headers) != len(set(headers)):
         raise BomError('The BOM contains duplicate column names.')

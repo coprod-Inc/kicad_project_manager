@@ -16,7 +16,7 @@ rules and PCB stackups. Use your own compatible templates and standards folders.
 
 For automatic updates, add the `repository.json` URL shown on the maintainer's
 published download page in **Plugin and Content Manager → Manage…**.
-Version **1.3.0** is the current stable release for KiCad 9 and 10. When upgrading from a
+Version **1.3.1** is the current stable release for KiCad 9 and 10. When upgrading from a
 previous package identity, uninstall that copy first; the package ID is
 `org.kicadprojectmanager.plugin`. Unlink source installations before installing
 the PCM package. For manual clone/symlink setup, see [development installation](docs/development.md#development-installation).
@@ -55,7 +55,7 @@ Accepted custom documents appear blue and keep the overall status green.
 the default after confirmation and backup. For `readme.txt`, the next CI run
 regenerates `README.md`. The managed `.gitignore` editor exposes only the project
 section, including `!pattern` overrides; **Use template** updates shared rules.
-The standard impedance document opens as an editable table, with raw Text available.
+The standard impedance document opens as an editable table.
 When standards are linked, import adds missing guidance matching the saved board;
 manual rows are preserved and geometry conflicts are reported.
 

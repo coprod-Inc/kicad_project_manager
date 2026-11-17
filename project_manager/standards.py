@@ -345,7 +345,9 @@ def preset_details(preset: Preset | None) -> str:
             lines.append(f'Manufacturer finished thickness: {data["finished_thickness_mm"]:g} mm'
                          + (f' ±{tolerance:g}%' if tolerance else ''))
         for target in data.get('impedance_targets', []):
-            lines.append(f'Routing guidance: {target["impedance_ohms"]:g} Ω {target["mode"].replace("_", " ")} · '
+            lines.append(f'Routing guidance: {target["impedance_ohms"]:g} Ω'
+                         + (f' ±{target["tolerance_percent"]:g}%' if 'tolerance_percent' in target else '')
+                         + f' {target["mode"].replace("_", " ")} · '
                          f'{target.get("geometry", "geometry unspecified")} · width {target["track_width_mm"]:g} mm'
                          + (f' / gap {target["pair_gap_mm"]:g} mm' if 'pair_gap_mm' in target else '')
                          + f' · layer {target.get("layer", "unconfirmed")} / reference {target.get("reference_layer", "unconfirmed")}'

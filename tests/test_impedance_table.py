@@ -51,6 +51,16 @@ class ImpedanceTableTests(unittest.TestCase):
         table = ImpedanceTable(HEADERS, (row,))
         self.assertEqual(add_missing_guides(table, preset(profile())), (table, 0, ()))
 
+    def test_source_tolerance_is_imported_and_existing_manual_tolerance_is_preserved(self):
+        guide = preset(profile(tolerance_percent=10))
+        table, added, conflicts = add_missing_guides(ImpedanceTable(HEADERS, ()), guide)
+        self.assertEqual((added, conflicts), (1, ()))
+        self.assertEqual(table.rows[0][2], '±10 %')
+        manual = (*table.rows[0][:2], '±5 %', *table.rows[0][3:])
+        existing = ImpedanceTable(HEADERS, (manual,))
+        self.assertEqual(add_missing_guides(existing, guide), (existing, 0, ()))
+
+
     def test_import_does_not_round_catalog_geometry(self):
         table, _, _ = add_missing_guides(ImpedanceTable(HEADERS, ()), preset(profile(
             track_width_mm=0.123456789, pair_gap_mm=0.0987654321)))

@@ -9,6 +9,9 @@ import wx.grid
 from .impedance_table import ImpedanceTable, LABELS, add_missing_guides, matching_guides
 from .standards import StandardsError
 
+WARNING_COLOUR = wx.Colour(190, 100, 0)
+EDIT_HINT = 'Edit cells directly; no spaces or tabs are needed. Apply saves the document.'
+
 
 class ImpedancePanel(wx.Panel):
     def __init__(self, parent, on_changed: Callable[[str], None], standards: Path | None = None,
@@ -27,7 +30,8 @@ class ImpedancePanel(wx.Panel):
         self.preset_choice = wx.Choice(self.import_panel)
         self.preset_choice.SetMinSize((180, -1))
         import_row.Add(self.preset_choice, 1, wx.RIGHT, 8)
-        self.import_button = wx.Button(self.import_panel, label='Add missing profiles')
+        self.import_button = wx.Button(self.import_panel, label='Add impedance profile')
+        self.import_button.SetToolTip('Add profiles from the selected stackup. Existing rows are kept.')
         self.import_button.Bind(wx.EVT_BUTTON, self._import)
         import_row.Add(self.import_button, 0)
         import_layout.Add(import_row, 0, wx.EXPAND)
@@ -49,7 +53,8 @@ class ImpedancePanel(wx.Panel):
             button.Bind(wx.EVT_BUTTON, handler)
             buttons.Add(button, 0, wx.RIGHT, 8)
         layout.Add(buttons, 0, wx.TOP, 8)
-        self.status = wx.StaticText(self, label='Edit cells directly; no spaces or tabs are needed. Apply saves the document.')
+        self.status = wx.StaticText(self, label=EDIT_HINT)
+        self._status_colour = self.status.GetForegroundColour()
         layout.Add(self.status, 0, wx.EXPAND | wx.TOP, 8)
         self.SetSizer(layout)
 
@@ -79,15 +84,23 @@ class ImpedancePanel(wx.Panel):
                     raise StandardsError('Save the PCB to import guidance from its matching stackup.')
                 self.presets = matching_guides(self.standards, self.board)
                 if not self.presets:
-                    message = 'No impedance guidance matches the saved board construction. Add guidance in the standards repo, then Refresh.'
+                    message = ('No impedance profile matches the saved PCB stackup. '
+                               'Apply a matching preset in Stackup, save the PCB, then Refresh. '
+                               'You can also add rows manually below.')
             except (StandardsError, OSError) as exc:
                 message = str(exc)
         self.preset_choice.Set([preset.name for preset in self.presets])
         self.preset_choice.SetSelection(0 if self.presets else wx.NOT_FOUND)
+        self.preset_choice.Enable(bool(self.presets))
         self.import_button.Enable(bool(self.presets))
-        if message:
-            self.status.SetLabel(message)
-            self.status.Wrap(max(260, self.GetSize().width))
+        self._set_status(message or EDIT_HINT, warning=bool(message))
+
+    def _set_status(self, message: str, *, warning: bool = False):
+        self.status.SetLabel(message)
+        self.status.SetForegroundColour(WARNING_COLOUR if warning else self._status_colour)
+        self.status.SetFont(self.GetFont().Bold() if warning else self.GetFont())
+        self.status.SetToolTip(message)
+        self.status.Wrap(max(260, self.GetClientSize().width))
         self.Layout()
 
     def flush(self):
@@ -144,9 +157,6 @@ class ImpedancePanel(wx.Panel):
             message = f'Added {added} profile(s). Existing rows and tolerances kept.'
             if conflicts:
                 message += '\n' + '\n'.join(conflicts)
-            self.status.SetLabel(message)
-            self.status.Wrap(max(260, self.GetSize().width))
-            self.status.SetToolTip(message)
-            self.Layout()
+            self._set_status(message, warning=bool(conflicts))
         except (StandardsError, OSError, ValueError) as exc:
             wx.MessageBox(str(exc), 'Import impedance guidance', wx.OK | wx.ICON_ERROR, self)

@@ -30,9 +30,9 @@ class ImpedanceTable:
         except csv.Error as exc:
             raise SetupError(f'Cannot read the impedance CSV: {exc}') from exc
         if not rows or tuple(cell.casefold() for cell in rows[0]) != tuple(cell.casefold() for cell in HEADERS):
-            raise SetupError('Table view needs the seven standard impedance column headings. Use Text for other formats.')
+            raise SetupError('Table view needs the seven standard impedance column headings. Use the document editor for other formats.')
         if any(len(row) != len(HEADERS) for row in rows[1:]):
-            raise SetupError('Each impedance row needs seven comma-separated fields. Use Text to correct its format.')
+            raise SetupError('Each impedance row needs seven comma-separated fields. Use the document editor to correct its format.')
         return cls(rows[0], tuple(rows[1:]))
 
     def render(self) -> str:
@@ -90,7 +90,8 @@ def add_missing_guides(table: ImpedanceTable, preset: Preset) -> tuple[Impedance
             conflicts.append(f'{target["impedance_ohms"]:g} Ω: add signal/reference layers to the standards profile first.')
             continue
         mode = 'Differential' if target['mode'] == 'differential' else 'Single-ended'
-        row = (f'{mode} {target.get("geometry", "")}'.strip(), str(target['impedance_ohms']), '',
+        tolerance = f'±{target["tolerance_percent"]:g} %' if target.get('tolerance_percent') is not None else ''
+        row = (f'{mode} {target.get("geometry", "")}'.strip(), str(target['impedance_ohms']), tolerance,
                _layer(target['layer'], count).upper(), str(target['track_width_mm']),
                str(target['pair_gap_mm']) if target.get('pair_gap_mm') else '',
                _layer(target['reference_layer'], count).upper())

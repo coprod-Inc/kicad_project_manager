@@ -29,7 +29,7 @@ def _positive(control, label):
 
 class ImpedanceTargetDialog(wx.Dialog):
     def __init__(self, parent, layers, target=None):
-        super().__init__(parent, title='Impedance guide', size=(620, 530),
+        super().__init__(parent, title='Impedance guide', size=(620, 570),
                          style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.target = None
         self.fields = {}
@@ -41,6 +41,7 @@ class ImpedanceTargetDialog(wx.Dialog):
         self.mode.SetSelection(0)
         grid.Add(self.mode, 1, wx.EXPAND)
         _field(self, grid, self.fields, 'impedance_ohms', 'Target (Ω)')
+        _field(self, grid, self.fields, 'tolerance_percent', 'Tolerance (±%, optional)')
         for key, label in [('layer', 'Signal layer'), ('reference_layer', 'Reference layer')]:
             grid.Add(wx.StaticText(self, label=label), 0, wx.ALIGN_CENTER_VERTICAL)
             self.fields[key] = wx.Choice(self, choices=layers)
@@ -80,6 +81,8 @@ class ImpedanceTargetDialog(wx.Dialog):
             target = {'mode': 'differential' if self.mode.GetSelection() == 0 else 'single_ended'}
             for key, label in [('impedance_ohms', 'Target impedance'), ('track_width_mm', 'Track width')]:
                 target[key] = _positive(self.fields[key], label)
+            if self.fields['tolerance_percent'].GetValue().strip():
+                target['tolerance_percent'] = _positive(self.fields['tolerance_percent'], 'Impedance tolerance')
             if target['mode'] == 'differential':
                 target['pair_gap_mm'] = _positive(self.fields['pair_gap_mm'], 'Pair gap')
             for key in ('layer', 'reference_layer'):

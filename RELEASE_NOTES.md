@@ -1,3 +1,28 @@
+KiCad Project Manager v1.3.0
+
+- Add an Exclude JLC checkbox as the last BOM & Stock column. Save ticks per
+  project and omit checked items from the JLCPCB assembly CSV while retaining
+  purchasing costs.
+- Add the BOM & Stock tab: quantity-based JLCPCB USD
+  pricing, stock and library classification, sorting, caching and saved paid prices.
+- Detect LCSC assignments per component in dedicated fields and primary or
+  alternate supplier part-number fields. Prefer the primary LCSC part, then the
+  first LCSC alternative. Show the detected source fields and report conflicts.
+- Exclude test points from schematic/CSV BOM imports, stock lookups, costing and
+  assembly exports, including test-point references inside grouped CSV rows.
+- Calculate USD totals from the components required for the selected board count.
+  Keep MOQ for supplier price-tier selection and Needed / buy information without
+  charging unused reel or minimum-order components to the board cost estimate.
+- Export a per-board JLCPCB assembly CSV with Comment, Designator, Footprint,
+  Quantity and LCSC Part #. Comment preserves the source Value; Quantity counts
+  the row's designators on one board. Preserve values and footprints independently
+  of cost grouping and build quantity. Keep uncoded parts for manual matching;
+  refuse ambiguous codes and incomplete assembly data.
+- Include BOM regressions in native Linux and bundled macOS GUI checks.
+- Keep installation instructions and source package metadata independent of any
+  fixed organization or personal repository. Resolve the release destination
+  from CI, the checkout's origin, or an explicit packaging option.
+
 KiCad Project Manager v1.2.0
 
 - Remember the explicit release version, including Unreleased, in the project's

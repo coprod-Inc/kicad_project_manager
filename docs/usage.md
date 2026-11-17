@@ -24,6 +24,116 @@ local edits are kept. The plugin never resets, stashes or switches branches.
 After pulling, source comparisons and catalogs reload without reopening the plugin
 or discarding Project Setup edits. Offline errors leave local sources usable.
 
+## BOM and stock
+
+Open **BOM & Stock** to price the saved schematic. Save schematic edits first;
+unsaved editor changes are not included. **Reload BOM** reruns KiCad's BOM export,
+excluding DNP parts, excluded components and test points. `TP` references followed
+by a number and components with TestPoint/TestPad values or footprints are omitted
+from imports, costing, stock lookups and assembly export. Mixed grouped CSV rows
+retain their other components and adjust quantities accordingly.
+LCSC detection runs separately for every component; no project-wide column
+selection is needed. Dedicated fields such as
+`LCSC`, `LCSC Part #`, and `JLCPCB Part Number` are recognized, along with
+`Supplier Part Number`, `Alt Supplier Part Number 1` and ordinary `Part Number`
+or `Alt Part Number` fields containing a C-number. Supplier labels are respected:
+a DigiKey part number is not treated as LCSC. Manufacturer part numbers, values,
+references and internal part numbers are not used as supplier assignments.
+
+The primary LCSC part takes precedence over alternative supplier slots; otherwise
+the first populated LCSC alternative is used. For example, a primary DigiKey part
+with an LCSC alternate uses the alternate code; a primary LCSC part with another
+LCSC substitute uses the primary code. Dedicated LCSC fields are authoritative;
+conflicting fields at the same priority are reported instead of choosing one.
+Select a row to see its detected source field(s). **Import CSV…** also accepts grouped
+JLCPCB/KiCad BOMs with references, quantity, value and a part-number column.
+**Use saved schematic** returns from an imported CSV to the project's schematic.
+
+Tick **Exclude JLC** in the last column of a BOM row to leave that item out of
+the JLCPCB assembly export. Untick it to include the item again. A grouped row applies to all of its
+designators. Ticks are saved per project and retained through sorting, reloads,
+stock refreshes and reopening the plugin. Excluded rows remain in the purchasing
+list and cost estimate, which also accounts for components assembled separately.
+
+**Export JLCPCB BOM…** saves a UTF-8 CSV with the columns `Comment`, `Designator`,
+`Footprint`, `Quantity` and `LCSC Part #`, following
+[JLCPCB's assembly BOM format](https://jlcpcb.com/help/article/how-to-generate-bom-and-centroid-files-from-kicad-8).
+Save and Reload BOM first to include the latest schematic changes. The export
+describes **one board** regardless of the Boards quantity: grouped designators
+are written explicitly, separated by commas, with no reference ranges. Value
+is copied into Comment even if the source also has a different Comment or MPN.
+Quantity is the row's designator count on **one board**, without multiplying by
+Boards or MOQ. The footprint's library prefix is removed. Cost grouping by
+LCSC number never discards differing values or footprints in the assembly CSV.
+
+Parts without a code are included with a blank LCSC cell and listed after export
+for manual matching on JLCPCB. DNP parts, excluded parts and test points stay out.
+Conflicting codes, missing values/footprints, duplicate designators (including case-only differences),
+or quantities inconsistent with the explicit references must be corrected before
+export. Export does not fetch prices or change the source BOM. The assembly order
+also needs a separate component placement (CPL) file.
+
+Change **Boards** to recalculate immediately from cached quantity price tiers.
+Identical JLCPCB numbers are aggregated before choosing a tier. All prices are
+USD, with the original supplier precision retained. **Needed / buy** shows an
+additional purchase quantity when JLCPCB supplies a minimum purchase quantity;
+that purchase quantity selects the supplier's unit-price tier and is used for
+stock availability. **USD total**, **BOM total** and the per-board estimate count
+only the required components: `unit price × parts per board × Boards`. Unused
+components in a reel or MOQ do not inflate the board cost. For example, two
+resistors at USD 0.0018 each contribute USD 0.0036 per board even if the supplier
+requires buying 5,000. Manual paid prices also count only required components.
+No fabrication, assembly, shipping, tax, or assembly attrition fees are included.
+Missing prices produce an explicitly
+incomplete subtotal rather than a zero price.
+
+Click any column header to sort ascending; click it again to sort descending.
+The arrow marks the active direction. Prices, totals, quantities and stock sort
+numerically, and unavailable values stay at the bottom in either direction.
+Sorting is retained during quantity changes and background refreshes, and edits
+continue to apply to the selected component even when its row moves. Sort
+**USD total** descending to find the largest contributors to the BOM cost.
+
+The **Type** column shows JLCPCB's **Basic** or **Extended** classification, and
+**Preferred** when explicitly supplied. Missing classifications are **Unknown**;
+the plugin does not infer them from price or stock. Older cached entries refresh
+in the background to retrieve this field. Manual prices do not change a part's
+JLCPCB classification.
+
+The tab uses anonymous JLCPCB component-page data, without an account, API key,
+AI, local server or LCSC fallback. It refreshes stale components when opened,
+with **Refresh JLCPCB**, and every 15 minutes while the tab is visible and
+**Auto refresh** is enabled. Quantity changes never make network requests. Each
+row shows when its stock/price was checked; shortages and changes since the
+previous check are highlighted. Stock is shared supplier availability, not a
+reservation. On errors, the last known values remain visible with the error;
+the website endpoint can change independently of the plugin.
+
+Select a row and choose **Set paid price…** (or double-click). Enter the total
+paid and pieces purchased: USD 13 for 10 pieces gives USD 1.30 per component.
+External and hand-soldered components can use manual prices without a JLCPCB
+number. Assigned parts continue to receive JLCPCB stock checks even when their
+price is manual. **Use JLCPCB price** removes the selected override. That action
+is also available inside the price dialog and does not require a valid manual
+amount or quantity. Clearing **Total paid** on an existing override and choosing
+**Save** also restores supplier pricing. Parts without a supplier number return
+to an unpriced state when their manual override is cleared.
+
+Manual prices, JLCPCB export exclusions, board quantity and BOM source live in
+the project's `kpm-bom.json`; keep that file with the project to carry these
+choices between machines.
+Overrides use a supplier part number or a value/footprint/manufacturer identity,
+so ordinary reference reannotation preserves them. Changing the part identity
+requires setting a new price. A paid-price entry is a planning price, not a count
+of remaining owned inventory. Settings that cannot be read are reported and never
+silently reset. Disposable supplier data lives separately in `bom-cache/` under
+the plugin's per-user data directory. Deleting that cache preserves manual prices.
+
+The data-access approach was informed by
+[Bouni's JLCPCB Tools](https://github.com/Bouni/kicad-jlcpcb-tools).
+The client reads the JLCPCB component-detail endpoint; its `priceList`,
+`jlcPrices` and `prices` catalog fields are supported without querying LCSC.
+
 ## Template review
 
 **Update template files** on Overview or in the review window updates all shared

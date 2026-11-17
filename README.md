@@ -9,15 +9,14 @@ rules and PCB stackups. Use your own compatible templates and standards folders.
    Python on macOS, Windows and Linux AppImage installations. For native
    Debian/Ubuntu packages, install `python3-pip python3-venv python3-wxgtk4.0`
    and select the system Python.
-2. In **Plugin and Content Manager → Manage…**, add:
-   ```text
-   https://coprod-llc.github.io/kicad_project_manager/repository.json
-   ```
-3. Install **KiCad Project Manager**, apply pending changes and restart PCB Editor.
+2. Download the packaged release ZIP supplied by the maintainer.
+3. In **Plugin and Content Manager → Install from File…**, select that ZIP,
+   apply pending changes and restart PCB Editor.
    Open the plugin from its toolbar button or **Tools → External Plugins**.
 
-Alternatively, install the packaged ZIP from [Releases](https://github.com/coprod-LLC/kicad_project_manager/releases).
-Version **1.1.0** is the current stable release for KiCad 9 and 10. When upgrading from a
+For automatic updates, add the `repository.json` URL shown on the maintainer's
+published download page in **Plugin and Content Manager → Manage…**.
+Version **1.3.0** is the current stable release for KiCad 9 and 10. When upgrading from a
 previous package identity, uninstall that copy first; the package ID is
 `org.kicadprojectmanager.plugin`. Unlink source installations before installing
 the PCM package. For manual clone/symlink setup, see [development installation](docs/development.md#development-installation).
@@ -31,9 +30,10 @@ the PCM package. For manual clone/symlink setup, see [development installation](
 | **Design Rules** | Select a rule profile, compare constraints and custom rules, then apply. |
 | **Stackup** | Compare saved and proposed constructions, adjust appearance, apply a preset or save an unmatched saved construction as a new preset. |
 | **Checklist** | Record generic PCB review checks, names, comments and dates locally; optionally record a completed review of saved design files. No Git or standards source is required. |
+| **BOM & Stock** | Automatically detect LCSC supplier fields, monitor JLCPCB prices/stock, save paid prices, and export an assembly BOM CSV. |
 
-Release preparation and Checklist are local development additions for 1.2.0;
-the published stable package remains 1.1.0.
+Tick **Exclude JLC** in the last BOM column to omit an item from the JLCPCB
+assembly export. The project remembers these choices.
 
 **Update template files** updates shared automation and resources while preserving
 project documents and release history. Optional **Git…** settings enable background

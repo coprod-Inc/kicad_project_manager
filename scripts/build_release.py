@@ -6,8 +6,10 @@ import argparse
 import ast
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +29,8 @@ PAYLOAD = (
     "project_manager/stackup_save.py", "project_manager/stackup_save_ui.py",
     "project_manager/sexpr.py", "project_manager/json_text.py",
     "project_manager/instance.py",
+    "project_manager/bom.py", "project_manager/bom_ui.py",
+    "project_manager/bom_jlc.py", "project_manager/bom_store.py",
     "project_manager/templates.py", "project_manager/template_ui.py", "project_manager/diff_ui.py",
     "project_manager/impedance_table.py", "project_manager/impedance_ui.py",
     "project_manager/release.py", "project_manager/release_ui.py",
@@ -49,12 +53,23 @@ def source_version(root: Path = ROOT) -> str:
 
 
 def repository_name(root: Path = ROOT) -> str:
-    metadata = json.loads((root / "pcm/metadata.json").read_text(encoding="utf-8"))
-    url = metadata["resources"]["repository"]
-    prefix = "https://github.com/"
-    if not url.startswith(prefix) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", url[len(prefix):]):
-        raise ValueError("Package repository must be a GitHub repository URL")
-    return url[len(prefix):]
+    """Resolve distribution hosting without baking an owner into plugin sources."""
+    repository = os.environ.get('GITHUB_REPOSITORY', '')
+    if repository:
+        if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
+            raise ValueError('GITHUB_REPOSITORY must be OWNER/REPO.')
+        return repository
+    try:
+        result = subprocess.run(['git', '-C', str(root), 'remote', 'get-url', 'origin'],
+                                capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        result = None
+    match = re.fullmatch(r'(?:https?://github\.com/|ssh://git@github\.com/|git@github\.com:)'
+                         r'([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/?',
+                         result.stdout.strip() if result is not None and result.returncode == 0 else '')
+    if not match:
+        raise ValueError('Pass --repository OWNER/REPO, set GITHUB_REPOSITORY, or use a GitHub origin remote.')
+    return match[1].removesuffix('.git')
 
 
 def json_bytes(value: object) -> bytes:
@@ -120,10 +135,10 @@ def build(root: Path, output: Path, tag: str, repository: str) -> tuple[Path, Pa
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--repository", default=repository_name())
+    parser.add_argument("--repository", help="GitHub OWNER/REPO; defaults to GitHub Actions or the origin remote")
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
-    archive, metadata = build(ROOT, args.output, args.tag, args.repository)
+    archive, metadata = build(ROOT, args.output, args.tag, args.repository or repository_name())
     print(f"Built {archive.name} and {metadata.name}")
 
 

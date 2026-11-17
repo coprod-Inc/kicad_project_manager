@@ -40,6 +40,7 @@ jobs:
           "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_gui --output .dev/mac-gui.png
           "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_review --output .dev/mac-review
           "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_sources
+          "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_bom --output .dev/mac-bom-stock.png
           "$RUNNER_TEMP/plugin-python/bin/python" -m scripts.smoke_stackup_save --output .dev/mac-save-preset
       - uses: actions/upload-artifact@v4
         if: always()
@@ -100,12 +101,15 @@ jobs:
         run: xvfb-run -a /usr/bin/python3 -u -m scripts.smoke_review --output .dev/review
       - name: Exercise optional source repository checks and pulls
         run: xvfb-run -a /usr/bin/python3 -u -m scripts.smoke_sources
+      - name: Exercise BOM fields, pricing, stock and JLCPCB assembly export
+        run: xvfb-run -a --server-args="-screen 0 2000x1000x24" /usr/bin/python3 -u -m scripts.smoke_bom --output .dev/bom-stock.png
       - uses: actions/upload-artifact@v4
         with:
           name: gui-preview
           include-hidden-files: true
           path: |
             .dev/gui.png
+            .dev/bom-stock*.png
             .dev/review
   kibot:
     name: KiBot metadata integration (KiCad ${{ matrix.major }})

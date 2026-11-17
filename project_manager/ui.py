@@ -11,6 +11,7 @@ import wx
 
 from . import NAME, __version__
 from .context import ContextError, ProjectContext
+from .bom_ui import BomStockPanel
 from .preferences import data_directory, kicad_user_template_directory, save_template, load_standards, save_settings
 from .setup import read_setup, suggested_metadata
 from .setup_ui import ProjectSetupPanel
@@ -179,6 +180,8 @@ class ProjectManagerFrame(wx.Frame):
         self.notebook.AddPage(self.stackup_panel, 'Stackup')
         self.checklist_panel = ChecklistPanel(self.notebook, storage, self._verify_project)
         self.notebook.AddPage(self.checklist_panel, 'Checklist')
+        self.bom_panel = BomStockPanel(self.notebook, storage)
+        self.notebook.AddPage(self.bom_panel, 'BOM && Stock')
         self.notebook.Bind(wx.EVT_NOTEBOOK_PAGE_CHANGED, self._page_changed)
         layout.Add(self.notebook, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 16)
         footer = wx.BoxSizer(wx.HORIZONTAL)
@@ -404,6 +407,7 @@ class ProjectManagerFrame(wx.Frame):
         for panel in self.standards_panels:
             panel.set_context(context if not error else None)
         self.checklist_panel.set_context(context if not error else None)
+        self.bom_panel.set_context(context if not error else None)
         if error or context is None:
             for field in self.fields.values():
                 field.ChangeValue("—")
@@ -565,8 +569,10 @@ class ProjectManagerFrame(wx.Frame):
 
     def _page_changed(self, event):
         event.Skip()
-        if event.GetSelection() == 4:
+        if self.notebook.GetCurrentPage() is self.checklist_panel:
             self.checklist_panel.refresh_review_status()
+        elif self.notebook.GetCurrentPage() is self.bom_panel:
+            self.bom_panel.on_shown()
 
     def _on_close(self, event: wx.CloseEvent) -> None:
         if event.CanVeto() and any(panel._busy for panel in self.standards_panels):
@@ -578,6 +584,7 @@ class ProjectManagerFrame(wx.Frame):
             event.Veto()
             return
         self._closing = True
+        self.bom_panel.close()
         if self.checklist_panel._timer:
             self.checklist_panel._timer.Stop()
         self.Destroy()

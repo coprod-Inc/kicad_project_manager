@@ -5,8 +5,10 @@ installation and the [usage guide](usage.md) for everyday operation.
 
 ## Development installation
 
+Replace `REPOSITORY_URL` with the clone URL of the checkout you want to use:
+
 ```sh
-git clone https://github.com/coprod-LLC/kicad_project_manager.git
+git clone REPOSITORY_URL kicad_project_manager
 cd kicad_project_manager
 python3 scripts/install_dev.py --kicad-major 10
 ```
@@ -57,11 +59,12 @@ session token automatically. Diagnostics contain local paths.
 ```sh
 python -m pip install -r requirements.txt -r requirements-dev.txt
 python -m unittest discover -s tests -v
-python -m scripts.build_release --tag v1.2.0
+python -m scripts.build_release --tag v1.3.0
 python -m scripts.validate_package --schemas /usr/share/kicad/schemas
 python -m scripts.smoke_gui --output .dev/gui.png
 python -m scripts.smoke_review --output .dev/review
 python -m scripts.smoke_sources
+python -m scripts.smoke_bom --output .dev/bom-stock.png
 python -m scripts.smoke_stackup_save --output .dev/save-preset
 ```
 
@@ -77,6 +80,11 @@ Generate the main README screenshots from the actual interface:
 python -m scripts.capture_screenshots --output docs/screenshots
 python -m scripts.smoke_review --output .dev/review
 ```
+
+The BOM smoke uses a synthetic CSV and mocked supplier data; it requires native
+wxPython but no network, KiCad CLI, or supplier account. Live provider checks can
+be run separately against a few known components. The BOM runtime uses only the
+standard library and KiCad's CLI; it adds no plugin environment dependencies.
 
 `project_manager/` contains runtime code; `tests/` contains regression fixtures
 and checks. `scripts/` provides installation, manifest creation, GUI/integration
@@ -131,5 +139,7 @@ parts, beyond what the JSON schema enforces. The development installer and packa
 builder validate that constraint before installation or packaging.
 Earlier package identities require uninstall/reinstall; their immutable ZIPs
 remain in GitHub Releases. The new feed retains versions of the generic identity.
-Repository URLs are derived from PCM metadata, and release workflows can override
-the repository for a fork.
+Packaging takes the repository from `GITHUB_REPOSITORY` in GitHub Actions or the
+checkout's GitHub `origin` remote locally. Pass `--repository OWNER/REPO` to the
+package/catalog builders when building from a source archive or choosing another
+release destination. The source metadata contains no fixed repository or contact URL.

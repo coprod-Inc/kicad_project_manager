@@ -49,6 +49,12 @@ Select a row to see its detected source field(s). **Import CSV…** also accepts
 JLCPCB/KiCad BOMs with references, quantity, value and a part-number column.
 **Use saved schematic** returns from an imported CSV to the project's schematic.
 
+Tick **Exclude JLC** in the last column of a BOM row to leave that item out of
+the JLCPCB assembly export. Untick it to include the item again. A grouped row applies to all of its
+designators. Ticks are saved per project and retained through sorting, reloads,
+stock refreshes and reopening the plugin. Excluded rows remain in the purchasing
+list and cost estimate, which also accounts for components assembled separately.
+
 **Export JLCPCB BOM…** saves a UTF-8 CSV with the columns `Comment`, `Designator`,
 `Footprint`, `Quantity` and `LCSC Part #`, following
 [JLCPCB's assembly BOM format](https://jlcpcb.com/help/article/how-to-generate-bom-and-centroid-files-from-kicad-8).
@@ -113,8 +119,9 @@ amount or quantity. Clearing **Total paid** on an existing override and choosing
 **Save** also restores supplier pricing. Parts without a supplier number return
 to an unpriced state when their manual override is cleared.
 
-Manual prices, board quantity and BOM source live in the project's
-`kpm-bom.json`; keep that file with the project to carry prices between machines.
+Manual prices, JLCPCB export exclusions, board quantity and BOM source live in
+the project's `kpm-bom.json`; keep that file with the project to carry these
+choices between machines.
 Overrides use a supplier part number or a value/footprint/manufacturer identity,
 so ordinary reference reannotation preserves them. Changing the part identity
 requires setting a new price. A paid-price entry is a planning price, not a count

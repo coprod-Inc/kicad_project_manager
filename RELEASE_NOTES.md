@@ -1,6 +1,9 @@
-KiCad Project Manager v1.3.0 (unreleased development)
+KiCad Project Manager v1.3.0
 
-- Add the BOM & Stock tab from the BOM stock branch: quantity-based JLCPCB USD
+- Add an Exclude JLC checkbox as the last BOM & Stock column. Save ticks per
+  project and omit checked items from the JLCPCB assembly CSV while retaining
+  purchasing costs.
+- Add the BOM & Stock tab: quantity-based JLCPCB USD
   pricing, stock and library classification, sorting, caching and saved paid prices.
 - Detect LCSC assignments per component in dedicated fields and primary or
   alternate supplier part-number fields. Prefer the primary LCSC part, then the

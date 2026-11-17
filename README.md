@@ -16,7 +16,7 @@ rules and PCB stackups. Use your own compatible templates and standards folders.
 
 For automatic updates, add the `repository.json` URL shown on the maintainer's
 published download page in **Plugin and Content Manager → Manage…**.
-Version **1.2.0** is the current stable release for KiCad 9 and 10. When upgrading from a
+Version **1.3.0** is the current stable release for KiCad 9 and 10. When upgrading from a
 previous package identity, uninstall that copy first; the package ID is
 `org.kicadprojectmanager.plugin`. Unlink source installations before installing
 the PCM package. For manual clone/symlink setup, see [development installation](docs/development.md#development-installation).
@@ -32,7 +32,8 @@ the PCM package. For manual clone/symlink setup, see [development installation](
 | **Checklist** | Record generic PCB review checks, names, comments and dates locally; optionally record a completed review of saved design files. No Git or standards source is required. |
 | **BOM & Stock** | Automatically detect LCSC supplier fields, monitor JLCPCB prices/stock, save paid prices, and export an assembly BOM CSV. |
 
-The published stable package is 1.2.0. BOM & Stock is under development for 1.3.0.
+Tick **Exclude JLC** in the last BOM column to omit an item from the JLCPCB
+assembly export. The project remembers these choices.
 
 **Update template files** updates shared automation and resources while preserving
 project documents and release history. Optional **Git…** settings enable background

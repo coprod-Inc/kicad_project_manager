@@ -37,6 +37,11 @@ def load_state(root: Path) -> dict:
         positive_integer(state.get('boards', 1))
         if not isinstance(state.get('source', ''), str) or not isinstance(state.get('overrides', {}), dict):
             raise ValueError('Invalid BOM settings.')
+        excluded = state.get('jlc_excluded', [])
+        if (not isinstance(excluded, list)
+                or any(not isinstance(key, str) or not key for key in excluded)
+                or len(excluded) != len(set(excluded))):
+            raise ValueError('Invalid JLCPCB export exclusions.')
         for value in state.get('overrides', {}).values():
             if not isinstance(value, dict) or value.get('currency') != 'USD':
                 raise ValueError('Invalid manual USD price.')

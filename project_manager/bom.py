@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import hashlib
@@ -269,7 +270,7 @@ def read_csv(text: str) -> list[BomPart]:
     return list(groups.values())
 
 
-def jlc_bom_csv(parts: list[BomPart]) -> str:
+def jlc_bom_csv(parts: list[BomPart], excluded_keys: Iterable[str] = ()) -> str:
     """JLCPCB assembly BOM for one board, independent of purchase quantities/prices.
 
     Format: https://jlcpcb.com/help/article/bill-of-materials-for-pcb-assembly
@@ -277,8 +278,12 @@ def jlc_bom_csv(parts: list[BomPart]) -> str:
     """
     if not parts:
         raise BomError('Load a populated BOM before exporting.')
+    excluded = set(excluded_keys)
+    included = [part for part in parts if part.key not in excluded]
+    if not included:
+        raise BomError('All BOM items are excluded from JLCPCB export. Untick Exclude JLC for at least one item.')
     groups, seen = {}, set()
-    for part in parts:
+    for part in included:
         if part.warning:
             raise BomError(f'{", ".join(part.references)}: {part.warning}. Correct the source BOM and reload before exporting.')
         code = part_number(part.code) if part.code else ''

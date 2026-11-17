@@ -102,7 +102,7 @@ jobs:
       - name: Exercise optional source repository checks and pulls
         run: xvfb-run -a /usr/bin/python3 -u -m scripts.smoke_sources
       - name: Exercise BOM fields, pricing, stock and JLCPCB assembly export
-        run: xvfb-run -a /usr/bin/python3 -u -m scripts.smoke_bom --output .dev/bom-stock.png
+        run: xvfb-run -a --server-args="-screen 0 2000x1000x24" /usr/bin/python3 -u -m scripts.smoke_bom --output .dev/bom-stock.png
       - uses: actions/upload-artifact@v4
         with:
           name: gui-preview

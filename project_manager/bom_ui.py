@@ -9,6 +9,7 @@ import threading
 import time
 
 import wx
+import wx.dataview as dv
 
 from .bom import BomError, amount, calculate, jlc_bom_csv, load_bom, natural_key, positive_integer, sorted_indices
 from .bom_jlc import fetch_supply
@@ -23,12 +24,41 @@ COLUMNS = (
     ('stock', 'JLC stock', 100), ('unit_price', 'USD / pc', 90),
     ('total', 'USD total', 95), ('source', 'Price source', 140),
     ('checked', 'Checked', 130), ('status', 'Status', 260),
+    ('exclude_jlc', 'Exclude JLC', 105),
 )
 COLUMN_INDEX = {key: index for index, (key, _, _) in enumerate(COLUMNS)}
 
 
 def money(value: Decimal | None, digits: int = 4) -> str:
     return '—' if value is None else f'{value:,.{digits}f}'
+
+
+class BomTableModel(dv.DataViewIndexListModel):
+    def __init__(self):
+        super().__init__(0)
+        self.rows = []
+        self.shortages = set()
+
+    def GetColumnCount(self):
+        return len(COLUMNS)
+
+    def GetColumnType(self, column):
+        return 'bool' if column == COLUMN_INDEX['exclude_jlc'] else 'string'
+
+    def GetValueByRow(self, row, column):
+        return self.rows[row][column]
+
+    def SetValueByRow(self, value, row, column):
+        if column != COLUMN_INDEX['exclude_jlc']:
+            return False
+        self.rows[row][column] = bool(value)
+        return True
+
+    def GetAttrByRow(self, row, column, attr):
+        if row in self.shortages:
+            attr.SetColour(wx.Colour(185, 55, 45))
+            return True
+        return False
 
 
 class PriceDialog(wx.Dialog):
@@ -116,6 +146,7 @@ class BomStockPanel(wx.Panel):
         self._closed = False
         self._loading = False
         self._refreshing = False
+        self._rendering = False
         self._last_refresh_started = 0.0
         self._cancel = threading.Event()
         self._visible_keys = []
@@ -156,14 +187,20 @@ class BomStockPanel(wx.Panel):
         layout.Add(totals, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 14)
         self.status = wx.StaticText(self, label='JLCPCB component prices in USD.', style=wx.ST_ELLIPSIZE_END)
         layout.Add(self.status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 14)
-        self.table = wx.ListCtrl(self, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
-        for _, label, width in COLUMNS:
-            self.table.InsertColumn(self.table.GetColumnCount(), label, width=width)
-        self.table.SetToolTip('Click any column header to sort; click it again to reverse the order. USD total = USD / pc × required components. Needed / buy also shows the supplier MOQ.')
-        self.table.Bind(wx.EVT_LIST_COL_CLICK, self._sort_by_column)
-        self.table.Bind(wx.EVT_LIST_ITEM_SELECTED, self._selection_changed)
-        self.table.Bind(wx.EVT_LIST_ITEM_DESELECTED, self._selection_changed)
-        self.table.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self._edit_price)
+        self.table = dv.DataViewCtrl(self, style=dv.DV_SINGLE)
+        self.table_model = BomTableModel()
+        self.table.AssociateModel(self.table_model)
+        for column, (key, label, width) in enumerate(COLUMNS):
+            if key == 'exclude_jlc':
+                self.table.AppendToggleColumn(label, column, mode=dv.DATAVIEW_CELL_ACTIVATABLE,
+                                              width=width, align=wx.ALIGN_CENTER)
+            else:
+                self.table.AppendTextColumn(label, column, width=width)
+        self.table.SetToolTip('Tick Exclude JLC to omit that item from the JLCPCB assembly export. Click any column header to sort; click it again to reverse the order. USD total = USD / pc × required components. Needed / buy also shows the supplier MOQ.')
+        self.table.Bind(dv.EVT_DATAVIEW_ITEM_VALUE_CHANGED, self._exclusion_changed)
+        self.table.Bind(dv.EVT_DATAVIEW_COLUMN_HEADER_CLICK, self._sort_by_column)
+        self.table.Bind(dv.EVT_DATAVIEW_SELECTION_CHANGED, self._selection_changed)
+        self.table.Bind(dv.EVT_DATAVIEW_ITEM_ACTIVATED, self._edit_price)
         layout.Add(self.table, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 14)
         actions = wx.BoxSizer(wx.HORIZONTAL)
         self.price_button = wx.Button(self, label='Set paid price…')
@@ -177,7 +214,7 @@ class BomStockPanel(wx.Panel):
         actions.Add(self.schematic_button, 0, wx.RIGHT, 8)
         actions.AddStretchSpacer()
         self.export_button = wx.Button(self, label='Export JLCPCB BOM…')
-        self.export_button.SetToolTip('Export a per-board assembly CSV: Comment (Value), Designator, Footprint, Quantity, LCSC Part #. Test points are excluded. Save and reload the schematic first to include its latest edits.')
+        self.export_button.SetToolTip('Export a per-board assembly CSV: Comment (Value), Designator, Footprint, Quantity, LCSC Part #. Items ticked Exclude JLC and test points are excluded. Save and reload the schematic first to include its latest edits.')
         self.export_button.Bind(wx.EVT_BUTTON, self._export_bom)
         actions.Add(self.export_button)
         layout.Add(actions, 0, wx.EXPAND | wx.ALL, 14)
@@ -426,7 +463,8 @@ class BomStockPanel(wx.Panel):
         self._render()
 
     def _selected(self):
-        index = self.table.GetFirstSelected()
+        item = self.table.GetSelection()
+        index = self.table_model.GetRow(item) if item.IsOk() else -1
         key = self._visible_keys[index] if 0 <= index < len(self._visible_keys) else None
         return next((part for part in self.parts if part.key == key), None)
 
@@ -438,6 +476,26 @@ class BomStockPanel(wx.Panel):
         self._sort_column = column
         self._render()
 
+    def _exclusion_changed(self, event):
+        if self._closed or self._rendering or event.GetColumn() != COLUMN_INDEX['exclude_jlc']:
+            return
+        item = event.GetItem()
+        index = self.table_model.GetRow(item) if item.IsOk() else -1
+        if not 0 <= index < len(self._visible_keys):
+            return
+        key = self._visible_keys[index]
+        excluded = set(self.state.get('jlc_excluded', []))
+        checked = self.table_model.GetValueByRow(index, COLUMN_INDEX['exclude_jlc'])
+        if checked == (key in excluded):
+            return
+        if checked:
+            excluded.add(key)
+        else:
+            excluded.discard(key)
+        self._save(dict(self.state, jlc_excluded=sorted(excluded)))
+        # Rebuild from saved state, restoring the checkbox if saving failed.
+        self._render()
+
     def _update_buttons(self):
         selected = self._selected()
         self.boards.Enable(bool(self.root))
@@ -445,7 +503,7 @@ class BomStockPanel(wx.Panel):
         self.import_button.Enable(bool(self.root) and not self._loading)
         self.schematic_button.Enable(bool(self._schematic()) and not self._loading)
         self.refresh_button.Enable(bool(self.parts) and not self._loading and not self._refreshing)
-        self.export_button.Enable(bool(self.parts) and not self._loading)
+        self.export_button.Enable(bool(self.parts) and not self._loading and not self.state_error)
         self.price_button.Enable(bool(selected) and not self.state_error)
         self.restore_button.Enable(bool(selected and selected.key in self.state.get('overrides', {})) and not self.state_error)
 
@@ -457,6 +515,7 @@ class BomStockPanel(wx.Panel):
         self.source_label.SetLabel(str(self.source) if self.source else 'No BOM loaded')
         self.source_label.SetToolTip(str(self.source or ''))
         lines = calculate(self.parts, self.boards.GetValue(), self.supplies, self.state.get('overrides', {}))
+        excluded = set(self.state.get('jlc_excluded', []))
         total = sum((line.total for line in lines if line.total is not None), Decimal(0))
         missing = sum(line.total is None for line in lines)
         suffix = f' · incomplete ({missing} unpriced)' if missing else ''
@@ -466,12 +525,17 @@ class BomStockPanel(wx.Panel):
         stale = sum(time.time() - supply.fetched_at >= CACHE_TTL for supply in self.supplies.values())
         uncoded = sum(not part.code for part in self.parts)
         message = f'{len(lines)} purchasing parts · {uncoded} without LCSC · {shortage} shortages · {stale} stale · {len(self.errors)} lookup errors{suffix}'
+        excluded_count = sum(part.key in excluded for part in self.parts)
+        if excluded_count:
+            message += f' · {excluded_count} excluded from JLC export'
         self._message(self.state_error or self.save_error or message)
         rows = []
         for line in lines:
             part = line.part
             supply = self.supplies.get(part.code)
             notes = [part.warning] if part.warning else []
+            if part.key in excluded:
+                notes.append('Excluded from JLCPCB export')
             if line.total is None:
                 notes.append('Price unavailable')
             if line.purchase > line.required:
@@ -496,37 +560,36 @@ class BomStockPanel(wx.Panel):
             values = (part.code or '—', library_type if part.code else '—', references, part.value,
                       str(part.quantity), need, '—' if line.stock is None else f'{line.stock:,}',
                       money(line.unit_price, 6), money(line.total), line.source,
-                      datetime.fromtimestamp(supply.fetched_at).strftime('%d %b %H:%M') if supply else '—', status)
+                      datetime.fromtimestamp(supply.fetched_at).strftime('%d %b %H:%M') if supply else '—', status, part.key in excluded)
             sort_values = (natural_key(part.code) if part.code else None,
                            natural_key(library_type) if library_type != 'Unknown' else None,
                            natural_key(references), natural_key(part.value) if part.value else None,
                            part.quantity, (line.required, line.purchase), line.stock,
                            line.unit_price, line.total, natural_key(line.source),
-                           supply.fetched_at if supply else None, natural_key(status))
+                           supply.fetched_at if supply else None, natural_key(status), part.key in excluded)
             rows.append((line, values, sort_values))
         order = (range(len(rows)) if self._sort_column is None else
                  sorted_indices([row[2] for row in rows], self._sort_column, self._sort_descending))
         self.table.Freeze()
+        self._rendering = True
         try:
-            self._visible_keys = []
-            self.table.DeleteAllItems()
-            for position in order:
-                line, values, _ = rows[position]
+            ordered = [rows[position] for position in order]
+            self._visible_keys = [line.part.key for line, _, _ in ordered]
+            self.table_model.rows = [list(values) for _, values, _ in ordered]
+            self.table_model.shortages = {index for index, (line, _, _) in enumerate(ordered)
+                                         if line.stock is not None and line.stock < line.purchase}
+            self.table_model.Reset(len(ordered))
+            self.table.UnselectAll()
+            for index, (line, _, _) in enumerate(ordered):
                 part = line.part
-                index = self.table.InsertItem(self.table.GetItemCount(), values[0])
-                self._visible_keys.append(part.key)
-                for column, value in enumerate(values[1:], 1):
-                    self.table.SetItem(index, column, value)
-                if line.stock is not None and line.stock < line.purchase:
-                    self.table.SetItemTextColour(index, wx.Colour(185, 55, 45))
                 if part.key == key:
-                    self.table.Select(index)
+                    self.table.Select(self.table_model.GetItem(index))
             for column, (_, label, _) in enumerate(COLUMNS):
                 header = self.table.GetColumn(column)
                 arrow = (' ▼' if self._sort_descending else ' ▲') if column == self._sort_column else ''
-                header.SetText(label + arrow)
-                self.table.SetColumn(column, header)
+                header.SetTitle(label + arrow)
         finally:
+            self._rendering = False
             self.table.Thaw()
         self._update_buttons()
         self.Layout()
@@ -544,6 +607,8 @@ class BomStockPanel(wx.Panel):
         self._update_buttons()
 
     def _edit_price(self, event=None):
+        if isinstance(event, dv.DataViewEvent) and event.GetColumn() == COLUMN_INDEX['exclude_jlc']:
+            return
         part = self._selected()
         if not part or self.state_error:
             return
@@ -580,8 +645,11 @@ class BomStockPanel(wx.Panel):
 
     def _export_bom(self, event=None):
         try:
+            if self.state_error:
+                raise BomError(self.state_error)
             # Validate before opening Save; no supplier request or price is needed.
-            contents = jlc_bom_csv(self.parts)
+            excluded = set(self.state.get('jlc_excluded', []))
+            contents = jlc_bom_csv(self.parts, excluded)
             anchor = Path(self.context.project_file or self.context.board_file)
             with wx.FileDialog(self, 'Export JLCPCB assembly BOM', defaultDir=str(self.root),
                                defaultFile=anchor.stem + '-jlcpcb-bom.csv',
@@ -595,7 +663,7 @@ class BomStockPanel(wx.Panel):
                 if self.source and destination.resolve() == self.source.resolve():
                     raise BomError('Choose a different filename to preserve the source BOM.')
                 destination.write_bytes(contents.encode('utf-8-sig'))
-            missing = [ref for part in self.parts if not part.code for ref in part.references]
+            missing = [ref for part in self.parts if part.key not in excluded and not part.code for ref in part.references]
             message = f'Exported per-board JLCPCB BOM: {destination}'
             if missing:
                 message += f' · {len(missing)} designator(s) have no LCSC code; match them on JLCPCB.'

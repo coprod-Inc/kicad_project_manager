@@ -76,6 +76,25 @@ class BomTests(unittest.TestCase):
         self.assertIn('\r\n', exported)
         self.assertEqual(read_csv(exported)[0].quantity, 2)
 
+    def test_jlc_export_excludes_whole_bom_items_by_stable_key(self):
+        parts = read_csv('Reference,Value,Footprint,LCSC\n'
+                         'R1,10k,0603,C25804\nR2,10k,0603,C25804\nQ1,MOSFET,SO8,\n')
+        rows = list(csv.DictReader(io.StringIO(jlc_bom_csv(parts, [parts[0].key]))))
+        self.assertEqual([(row['Designator'], row['Quantity']) for row in rows], [('Q1', '1')])
+        rows = list(csv.DictReader(io.StringIO(jlc_bom_csv(parts, [parts[1].key, 'jlc:C999']))))
+        self.assertEqual([(row['Designator'], row['Quantity']) for row in rows], [('R1,R2', '2')])
+        self.assertEqual(len(list(csv.DictReader(io.StringIO(jlc_bom_csv(parts))))), 2)
+
+    def test_jlc_export_validates_only_included_items_and_rejects_all_excluded(self):
+        parts = read_csv('Reference,Value,Footprint,LCSC,JLCPCB\n'
+                         'U1,IC,,C123,C456\nR1,10k,0603,C25804,\n')
+        with self.assertRaises(BomError):
+            jlc_bom_csv(parts)
+        rows = list(csv.DictReader(io.StringIO(jlc_bom_csv(parts, [parts[0].key]))))
+        self.assertEqual([row['Designator'] for row in rows], ['R1'])
+        with self.assertRaisesRegex(BomError, 'All BOM items are excluded'):
+            jlc_bom_csv(parts, [part.key for part in parts])
+
     def test_test_points_are_excluded_before_cost_grouping_and_export(self):
         parts = read_csv('Reference,Value,Footprint,LCSC\n'
                          'R1,10k,0603,C25804\n'
@@ -210,6 +229,35 @@ class BomTests(unittest.TestCase):
             line = calculate([reannotated], 20, {}, load_state(root)['overrides'])[0]
             self.assertEqual(line.total, Decimal('26.0'))
             self.assertEqual((root / 'kpm-bom.json').read_bytes(), before)
+
+    def test_jlc_exclusions_survive_reannotation_and_preserve_old_settings(self):
+        original = read_csv('Reference,Value,Footprint,LCSC\nR1,10k,0603,C25804\nQ1,MOSFET,SO8,\n')
+        reannotated = read_csv('Reference,Value,Footprint,LCSC\nR99,10k,0603,C25804\nQ99,MOSFET,SO8,\n')
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            old = {'version': 1, 'boards': 5, 'source': 'bom.csv', 'overrides': {
+                original[1].key: {'paid': '13', 'quantity': 10, 'currency': 'USD'}}}
+            save_state(root, old)
+            self.assertEqual(load_state(root), old)
+            state = dict(load_state(root), jlc_excluded=[original[1].key])
+            save_state(root, state)
+            restored = load_state(root)
+            self.assertEqual(restored, state)
+            self.assertEqual(restored['overrides'], old['overrides'])
+            rows = list(csv.DictReader(io.StringIO(jlc_bom_csv(reannotated, restored['jlc_excluded']))))
+            self.assertEqual([row['Designator'] for row in rows], ['R99'])
+            self.assertEqual(calculate(reannotated, 5, {}, restored['overrides'])[1].total, Decimal('6.5'))
+
+    def test_malformed_jlc_exclusions_are_reported_without_rewriting_settings(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            for excluded in ('jlc:C123', None, [False], [''], ['jlc:C123', 'jlc:C123'], [{}]):
+                with self.subTest(excluded=excluded):
+                    save_state(root, {'version': 1, 'jlc_excluded': excluded})
+                    before = (root / 'kpm-bom.json').read_bytes()
+                    with self.assertRaisesRegex(BomError, 'JLCPCB export exclusions'):
+                        load_state(root)
+                    self.assertEqual((root / 'kpm-bom.json').read_bytes(), before)
 
     def test_moq_selects_unit_price_tier_but_total_counts_only_required_components(self):
         part = read_csv('Reference,Value,LCSC\nR1,10k,C25804\n')[0]
